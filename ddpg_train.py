@@ -276,19 +276,21 @@ class SamplingAgent0(scip.Branchrule):
         
         # custom policy branching           
         if self.model.getNNodes() == 1:    
-            print('sampling agent:',self.model)
             self.model_1 = ecole.scip.Model.from_file(self.instance)
-            # self.model_1 = ecole.scip.Model.from_pyscipopt(self.model)
-            # print('trans model in samp A')
             # extract formula features
             self.state = utilities.extract_state(self.model_1, self.state_buffer)
             # self.state = ecole.observation.NodeBipartite().extract()            
+            # print(self.state)
             self.model_ptr = self.model.to_ptr(True)
             self.name = ctypes.c_char_p(self.exploration_policy.encode('utf-8'))
             result_code = exec.executeBranchRule(self.model_ptr, self.name, allowaddcons)
-            print('branch result',result_code)
-            # result = self.model.executeBranchRule(self.exploration_policy, allowaddcons)
             
+            # result = self.model.executeBranchRule(self.exploration_policy, allowaddcons)
+            # exec.getState.argtypes = [ctypes.py_object, ctypes.py_object]
+            # exec.getState.restype = ctypes.py_object
+            # nrows = exec.getState(self.model_ptr, self.state)
+            
+            # print('row num:',nrows)
                                
         elif self.model.getNNodes() != 1:
             relps = utilities.EnhancedPseudoCostBranching(self.model_2)
@@ -301,7 +303,7 @@ class SamplingAgent0(scip.Branchrule):
             self.ndomchgs += 1
         elif result == scip.SCIP_RESULT.CUTOFF:
             self.ncutoffs += 1
-        print(result)
+        
         return {'result': result}
 
 
@@ -493,8 +495,20 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 #    feats = X[:,[0,2,3,4,5,6,8,9,10,12]]
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
+    # print('shape epi:',np.shape(epi))
+    # # print('shape epi 0 and 1',np.shape(epi[0],',',np.shape(epi[1])))
+    # for i in range(np.shape(obje)[0]):
+    #     print(obje[i])
+    # print('shape obje:',np.shape(obje))
+    # print('shape bobj:',np.shape(bobj))
+    # print('shape ini_sol:',np.shape(ini_sol))
+    # print('collecterM:',len(collecterM))
+    for i in range(len(collecterM)):
+        collecterM[i] = collecterM[i][:,:500]
+        # print(np.shape(collecterM[i]))
     
     return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances, np.stack(ini_sol), np.stack(collecterM)
+    # return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances
 
 
 
@@ -533,10 +547,10 @@ def learn(args,network='gnn',
     exploration_strategy = 'relpscost'
 
     instances_valid = []
-    file_name = '/home/yunbo/workspace/learn2branch/data/instances/setcover/test_500r_1000c_0.05d/instance_3.lp'
+    file_name = '/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/instance_3.lp'
     # instances_train = glob.glob('')
     single_ins = Path(file_name)
-    instances_train = glob.glob('/home/yunbo/workspace/GCN_t/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
+    instances_train = glob.glob('/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
     # instances_train = Path(file_name)
     instances_valid += ['data/instances/setcover/validation5000/instance_{}.lp'.format(i+1) for i in range(10)]
     out_dir = '/home/yunbo/workspace/test'
@@ -605,7 +619,7 @@ def learn(args,network='gnn',
                 best_root=ori_objs.copy()
                 current_sols = init_sols
                 if nenvs > 1:
-                    ec_env.reset()
+                    agent.reset()
 
                 pre_sols = np.zeros([2,batch_sample,1000])
                 rec_inc = [[] for r in range(batch_sample)]
