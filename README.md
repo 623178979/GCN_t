@@ -1,15 +1,16 @@
 # GCN_t
 ## Installation
-Python=3.8.19
+### Conda
+`conda config --add channels conda-forge
+conda config --add channels pytorch
+conda create -n name python=3.8 pytorch scip=8.0.1 pyscipopt numpy
+conda install pyg -c pyg
+conda install cython`
 
-Pytorch=1.12.1
+Download the ecole package [here](https://drive.google.com/file/d/1vXdfIeeoCctlHszhg7n1goBcEs052A0q/view?usp=drive_link) and extract it.
 
-scip=8.0.1
+`cd ecole_0.8.1'
 
-ecole=0.8.1
+o specify the where to find SCIP
 
-numpy
-
-pyscipopt=4.2.0
-
-pyg = 2.5.2
+'CMAKE_ARGS="-DSCIP_DIR=path/to/lib/cmake/scip -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON" python -m pip install .`
