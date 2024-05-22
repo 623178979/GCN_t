@@ -349,7 +349,7 @@ def make_samples0(in_queue):
         priority=666666, maxdepth=-1, maxbounddist=1)
     abc=time.time()    
     m.optimize()       
-    print(time.time()-abc)    
+    # print(time.time()-abc)    
 
     b_obj = m.getObjVal()
 
@@ -526,9 +526,9 @@ def learn(args,network='gnn',
           popart=False,
           gamma=0.99,
           clip_norm=None,
-          nb_train_steps=6, # per epoch cycle and MPI worker,
+          nb_train_steps=5,#6, # per epoch cycle and MPI worker,
           nb_eval_steps=20,
-          batch_size=32, # per MPI worker
+          batch_size=25, # per MPI worker
           tau=0.01,
           eval_env=None,
           param_noise_adaption_interval=30,
@@ -552,11 +552,11 @@ def learn(args,network='gnn',
     # instances_valid += ['/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/validation5000//instance_{}.lp'.format(i+1) for i in range(10)]
     out_dir = '/home/yunbo/workspace/test'
 
-    nb_epochs = 20
-    nb_epoch_cycles = len(instances_train)//batch_sample
+    nb_epochs = 200 #20
+    nb_epoch_cycles = 10#len(instances_train)//batch_sample
     
-    # nb_epoch_cycles = 1000//batch_sample
-    nb_rollout_steps = 30
+    
+    nb_rollout_steps = 16 #30
 
     # print("{} train instances for {} samples".format(len(instances_train),nb_epoch_cycles*nb_epochs*batch_sample))
 
