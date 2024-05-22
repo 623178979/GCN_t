@@ -6,7 +6,9 @@ import gym
 import time
 import ddpg.core as core
 from ddpg.utils.logx import EpochLogger
+import ddpg.util as U
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer:
     """
@@ -19,25 +21,35 @@ class ReplayBuffer:
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
+        self.next_action_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, next_obs, done):
+    def store(self, obs, act, rew, next_obs, next_act, done):
         self.obs_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
+        self.next_action_buf[self.ptr] = next_act
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr+1) % self.max_size
         self.size = min(self.size+1, self.max_size)
 
     def sample_batch(self, batch_size=32):
         idxs = np.random.randint(0, self.size, size=batch_size)
-        batch = dict(obs=self.obs_buf[idxs],
-                     obs2=self.obs2_buf[idxs],
+        batch = dict(obs0=self.obs_buf[idxs],
+                     obs1=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
+                     next_actions=self.next_action_buf[idxs],
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
+    
+    @property
+    def nb_entries(self):
+        return len(self.obs_buf)
+
+
+
 
 def get_target_updates(vars, target_vars, tau):
     # logger.info('setting up target updates ...')
@@ -55,11 +67,13 @@ def get_target_updates(vars, target_vars, tau):
     return init_updates, soft_updates
 
 class DDPG(object):
-    def __init__(self, env_fn, actor_critic=core.GNNActorCritic, ac_kwargs=dict(), seed=0, 
-            steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, tau=0.001, 
-            polyak=0.995, pi_lr=1e-3, q_lr=1e-3, batch_size=100, start_steps=10000, 
-            update_after=1000, update_every=50, act_noise=0.1, num_test_episodes=10, 
-            max_ep_len=1000, logger_kwargs=dict(), save_freq=1, instances=None):
+    def __init__(self, actor_critic=core.GNNActorCritic, critic = core.GNNQFunction, seed=0, 
+            steps_per_epoch=4000, replay_size=int(250), gamma=0.99, tau=0.001, 
+            polyak=0.995, pi_lr=1e-5, q_lr=1e-5, normalize_observations=True, batch_size=100,
+            start_steps=10000, update_after=1000, update_every=50, act_noise=0.1,
+            num_test_episodes=10, max_ep_len=1000, logger_kwargs=dict(), epochs=100,
+            critic_l2_reg=0.
+        ):
         """
         Deep Deterministic Policy Gradient (DDPG)
 
@@ -144,13 +158,13 @@ class DDPG(object):
 
         """
 
-        self.logger = EpochLogger(**logger_kwargs)
-        self.logger.save_config(locals())
+        # self.logger = EpochLogger(**logger_kwargs)
+        # self.logger.save_config(locals())
 
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        self.env, self.test_env = env_fn, env_fn
+        # self.env, self.test_env = env_fn, env_fn
         # init env
         
         # self.obs_dim = self.env.observation_space.shape
@@ -163,11 +177,12 @@ class DDPG(object):
         self.act_limit = 0.8
 
         # Create actor-critic module and target networks
-        self.ac = actor_critic()
-        self.ac_targ = deepcopy(self.ac)
+        self.actor = actor_critic()
+        self.actor_targ = deepcopy(self.actor)
+        self.critic = critic()
+        self.critic_targ = deepcopy(self.critic)
         self.seed = seed
         self.steps_per_epoch = steps_per_epoch
-        self.epochs = epochs
         self.replay_size = replay_size
         self.gamma = gamma
         self.polyak = polyak
@@ -180,69 +195,97 @@ class DDPG(object):
         self.act_noise = act_noise
         self.num_test_episodes = num_test_episodes
         self.max_ep_len = max_ep_len
-        self.instances = instances
+        self.epochs = epochs
         self.tau = tau
+        self.normalize_observations = normalize_observations
+        self.critic_l2_reg = critic_l2_reg
+        
+        
 
+        #ob norm
+        if self.normalize_observations:
+            # self.obs_rms = U.RunningMeanStd(shape=self.obs_dim)
+            self.obs_rms = U.RunningMeanStd(shape=(1000,14))
+        else:
+            self.obs_rms = None
+        # normalized_obs0 = torch.clamp(U.normalize(self.obs0, self.obs_rms))
+
+        #return norm
+        self.ret_rms = None
         # Set up optimizers for policy and q-function
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
-        self.q_optimizer = Adam(self.ac.q.parameters(), lr=q_lr)
+        self.pi_optimizer = Adam(self.actor.pi.parameters(), lr=pi_lr)
+        self.q_optimizer = Adam(self.critic.q.parameters(), lr=q_lr, weight_decay=self.critic_l2_reg)
 
         # Set up model saving
-        self.logger.setup_pytorch_saver(self.ac)
+        # self.logger.setup_pytorch_saver(self.actor)
 
         # Prepare for interaction with environment
         self.total_steps = self.steps_per_epoch * self.epochs
         self.start_time = time.time()
-        self.o, self.ep_ret, self.ep_len = self.env.reset(self.instances), 0, 0
+        # self.o, self.ep_ret, self.ep_len = self.env.reset(self.instances), 0, 0
 
 
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
-        for p in self.ac_targ.parameters():
+        for p in self.actor_targ.parameters():
+            p.requires_grad = False
+        for p in self.critic_targ.parameters():
             p.requires_grad = False
 
         # Experience buffer
-        self.replay_buffer = ReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_size)
+        self.replay_buffer = ReplayBuffer(obs_dim=(1000,14,), act_dim=(1000,1), size=self.replay_size)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
-        var_counts = tuple(core.count_vars(module) for module in [self.ac.pi, self.ac.q])
-        self.logger.log('\nNumber of parameters: \t pi: %d, \t q: %d\n'%var_counts)
+        var_counts = tuple(core.count_vars(module) for module in [self.actor.pi, self.critic.q])
+        # self.logger.log('\nNumber of parameters: \t pi: %d, \t q: %d\n'%var_counts)
 
         # Set up function for computing DDPG Q-loss
     
     def setup_target_network_updates(self):
-        actor_init_up, actor_soft_up = get_target_updates(self.actor.vars, self.target_actor.vars, self.tau)
-        critic_init_up, critic_soft_up = get_target_updates(self.critic.vars, self.target_critic.vars, self.tau)
+        actor_init_up, actor_soft_up = get_target_updates(self.actor.vars, self.actor_targ.vars, self.tau)
+        critic_init_up, critic_soft_up = get_target_updates(self.critic.vars, self.critic_targ.vars, self.tau)
         self.target_init_up = [actor_init_up, critic_init_up]
         self.target_soft_up = [actor_soft_up, critic_soft_up]
 
     # def setup_popart(self):
-        
+    def compute_q(self, obs, action):
+        q = self.critic.q(torch.as_tensor(obs, dtype=torch.float32).to(DEVICE), torch.as_tensor(action, dtype=torch.float32).to(DEVICE))
+        return q   
     
-    def compute_loss_q(self, data):
-        self.o, self.a, self.r, self.o2, self.d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
-
-        self.q = self.ac.q(self.o,self.a)
-
+    def compute_loss_q(self, Q0, target_Q):
         # Bellman backup for Q function
-        with torch.no_grad():
-            self.q_pi_targ = self.ac_targ.q(self.o2, self.ac_targ.pi(self.o2))
-            self.backup = self.r + self.gamma * self.q_pi_targ
+        # with torch.no_grad():
+        #     self.q_pi_targ = self.critic.q(self.o2, self.actor.pi(self.o2))
+            
+        #     self.backup = self.r + self.gamma * target_Q
 
         # MSE loss against Bellman backup
-        self.loss_q = ((self.q - self.backup)**2).mean()
+        self.loss_q = ((Q0 - target_Q)**2).mean()
+        # if self.critic_l2_reg > 0.:
 
         # Useful info for logging
-        self.loss_info = dict(QVals=self.q.detach().numpy())
+        # self.loss_info = dict(QVals=self.q.detach().numpy())
 
-        return self.loss_q, self.loss_info
+        return self.loss_q
+
 
     # Set up function for computing DDPG pi loss
-    def compute_loss_pi(self, data):
-        self.o = data['obs']
-        self.q_pi = self.ac.q(self.o, self.ac.pi(self.o))
-        return -self.q_pi.mean()
+    def compute_loss_pi(self, obs, act, Q0):
+        # Q_1 = Q0.clone()
+        self.choice = torch.cat([1-self.actor.pi(obs), self.actor.pi(obs)],dim=2).to(DEVICE)
+        self.choice_1 = torch.reshape(self.choice,(-1,2)).to(DEVICE)
+        self.indice = torch.cat([torch.arange(start=0,end=self.batch_size*1000).unsqueeze(-1).to(DEVICE),torch.reshape(act.type(torch.cuda.IntTensor),(-1,1))],-1).to(DEVICE)
+        self.decision = U.gather_nd(self.choice_1,self.indice).to(DEVICE)
+        self.decision_1 = torch.reshape(self.decision,(-1,1000,1)).to(DEVICE)
+        self.actor_loss = -(torch.sum(torch.log(self.decision_1),1)*Q0).mean()
+        # Q0_re = Q0.reshape(-1,1)
 
+        # self.q_pi = self.critic.q(self.o, self.actor.pi(self.o))
+        return self.actor_loss
+        # return torch.mean(torch.matmul(torch.sum(torch.log(self.choice),1),Q0))
+
+    # def compute_pi(self, obs):
+    #     self.q_pi = self.
     # # Set up optimizers for policy and q-function
     # self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
     # self.q_optimizer = Adam(self.ac.q.parameters(), lr=q_lr)
@@ -250,43 +293,53 @@ class DDPG(object):
     # # Set up model saving
     # logger.setup_pytorch_saver(self.ac)
 
-    def update(self, data):
+    def update(self, obs, act, target_Q, Q0):
+        torch.autograd.set_detect_anomaly(True)
         # First run one gradient descent step for Q.
         self.q_optimizer.zero_grad()
-        loss_q, loss_info = self.compute_loss_q(data)
-        loss_q.backward()
+        loss_q = self.compute_loss_q(Q0=Q0 ,target_Q=target_Q)
+        loss_q.backward(retain_graph=True)
         self.q_optimizer.step()
 
         # Freeze Q-network so you don't waste computational effort 
         # computing gradients for it during the policy learning step.
-        for p in self.ac.q.parameters():
+        for p in self.critic.q.parameters():
             p.requires_grad = False
 
         # Next run one gradient descent step for pi.
+        # with torch.autograd.set_detect_anomaly(True):
         self.pi_optimizer.zero_grad()
-        loss_pi = self.compute_loss_pi(data)
-        loss_pi.backward()
+        loss_pi = self.compute_loss_pi(obs=obs,act=act,Q0=Q0)
+        loss_pi.backward(retain_graph=True)
+        # self.q_optimizer.step()
         self.pi_optimizer.step()
 
         # Unfreeze Q-network so you can optimize it at next DDPG step.
-        for p in self.ac.q.parameters():
+        for p in self.critic.q.parameters():
             p.requires_grad = True
 
         # Record things
-        self.logger.store(LossQ=loss_q.item(), LossPi=loss_pi.item(), **loss_info)
+        # self.logger.store(LossQ=loss_q.item(), LossPi=loss_pi.item(), **loss_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
-            for p, p_targ in zip(self.ac.parameters(), self.ac_targ.parameters()):
+            for p, p_targ in zip(self.actor.parameters(), self.actor_targ.parameters()):
                 # NB: We use an in-place operations "mul_", "add_" to update target
                 # params, as opposed to "mul" and "add", which would make new tensors.
                 p_targ.data.mul_(self.polyak)
                 p_targ.data.add_((1 - self.polyak) * p.data)
 
+            for q, q_targ in zip(self.critic.parameters(),self.critic_targ.parameters()):
+                q_targ.data.mul_(self.polyak)
+                q_targ.data.add_((1 - self.polyak) * q.data)
+
+        return loss_pi, loss_q
+
     def get_action(self, o, noise_scale):
-        a = self.ac.act(torch.as_tensor(o, dtype=torch.float32))
-        a += noise_scale * np.random.randn(self.act_dim)
+        a = self.actor.act(torch.as_tensor(o, dtype=torch.float32).to(DEVICE))
+        # a += noise_scale * np.random.randn(self.act_dim)
         # return np.clip(a, -self.act_limit, self.act_limit)
+        a = a.detach().cpu().numpy()
         return np.clip(a, 0.2, 0.8)
 
     def test_agent(self):
@@ -297,81 +350,137 @@ class DDPG(object):
                 o, r, d, _ = self.test_env.step(self.get_action(o, 0))
                 ep_ret += r
                 ep_len += 1
-            self.logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+            # self.logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
     # def setup_popart(self):
-    #     self
+    #     new_var = self.ret_rms.var
+    #     new_mean = self.ret_rms.mean
 
-    # def step(self, IM):
-    #     batch = self.
+    def step(self, obs, apply_noise=True, compute_Q=True):
+        # param_noise = None
+
+        # actor = self
+        if compute_Q:
+            action = self.get_action(obs,0)
+            q = self.compute_q(obs=obs,action=torch.as_tensor(action, dtype=torch.float32).to(DEVICE))
+        else:
+            action = self.get_action(obs,0)
+            q = None
+        action = np.clip(action, 0.2, 0.8)
+        return action, q
     # # Prepare for interaction with environment
     # self.total_steps = self.steps_per_epoch * self.epochs
     # self.start_time = time.time()
     # self.o, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
 
+    def reset(self):
+        
+        pass
+    
+    def store_trans(self, obs0, action, reward, obs1, action_next, ins):
+        # reward *= self.reward_scale
+        B = obs0.shape[0]
+        for b in range(B):
+            self.replay_buffer.store(obs=obs0[b],act=action[b],rew=reward[b],next_obs=obs1[b],next_act=action_next[b], done=ins[b])
+            if self.normalize_observations:
+                self.obs_rms.update(np.array([obs0[b]]))
+
     # Main loop: collect experience in env and update/log each epoch
     def train(self,IM):
-        for t in range(self.total_steps):
+        
+        batch = self.replay_buffer.sample_batch(batch_size=self.batch_size)
+        # print(type(batch['obs1']))
+        IM_batch = IM[batch['done'].numpy().squeeze().astype(int)]
+        
+        self.obs1 = batch['obs1'].numpy()
+        self.rewards = batch['rew'].numpy()
+        self.next_act = batch['next_actions'].numpy()
+        norm_obs1 = U.normalize(self.obs1,self.obs_rms)
+        Q_obs1 = self.critic_targ(torch.as_tensor(norm_obs1, dtype=torch.float32).to(DEVICE),torch.as_tensor(self.next_act, dtype=torch.float32).to(DEVICE))
+        Q_obs1 = Q_obs1.detach().cpu().numpy()
+        target_Q = self.rewards + self.gamma * Q_obs1
+        # self.obs0 = np.concatenate((batch['obs0'].numpy(), IM_batch), axis=-1)
+        self.obs0 = batch['obs0'].numpy()
+        norm_obs0 = U.normalize(self.obs0,self.obs_rms)
+        norm_obs0 = np.concatenate((norm_obs0, IM_batch), axis=-1)
+        norm_obs0 = torch.as_tensor(norm_obs0, dtype=torch.float32).to(DEVICE)
+
+        critic_1 = deepcopy(self.critic)
+        # Q0 = self.critic.q(norm_obs0,batch['act'].to(DEVICE))
+        Q0 = critic_1.q(norm_obs0,batch['act'].to(DEVICE))
+        print('-----------------------------------')
+        print(batch['rew'].shape)
+        print(batch['obs1'].shape)
+        print(Q0.shape)
+        print(target_Q.shape)
+        print(batch['act'].shape)
+        target_Q = torch.as_tensor(target_Q, dtype=torch.float32).to(DEVICE)
+        actor_loss, critic_loss = self.update(obs=norm_obs0,target_Q=target_Q,Q0=Q0,act=batch['act'].to(DEVICE))
+        # del Q0
+        return critic_loss, actor_loss
+        # for t in range(self.total_steps):
             
-            # Until start_steps have elapsed, randomly sample actions
-            # from a uniform distribution for better exploration. Afterwards, 
-            # use the learned policy (with some noise, via act_noise). 
-            if t > self.start_steps:
-                a = self.get_action(self.o, self.act_noise)
-            else:
-                a = self.env.action_space.sample()
+        #     # Until start_steps have elapsed, randomly sample actions
+        #     # from a uniform distribution for better exploration. Afterwards, 
+        #     # use the learned policy (with some noise, via act_noise). 
+        #     if t > self.start_steps:
+        #         a = self.get_action(self.o, self.act_noise)
+        #     else:
+        #         a = self.env.action_space.sample()
 
-            # Step the env
-            self.o2, self.r, self.d, _ = self.env.step(a)
-            self.ep_ret += self.r
-            self.ep_len += 1
+        #     # Step the env
+        #     self.o2, self.r, self.d, _ = self.env.step(a)
+        #     self.ep_ret += self.r
+        #     self.ep_len += 1
 
-            # Ignore the "done" signal if it comes from hitting the time
-            # horizon (that is, when it's an artificial terminal signal
-            # that isn't based on the agent's state)
-            d = False if self.ep_len==self.max_ep_len else d
+        #     # Ignore the "done" signal if it comes from hitting the time
+        #     # horizon (that is, when it's an artificial terminal signal
+        #     # that isn't based on the agent's state)
+        #     d = False if self.ep_len==self.max_ep_len else d
 
-            # Store experience to replay buffer
-            self.replay_buffer.store(self.o, self.a, self.r, self.o2, self.d)
+        #     # Store experience to replay buffer
+        #     self.replay_buffer.store(self.o, self.a, self.r, self.o2, self.d)
 
-            # Super critical, easy to overlook step: make sure to update 
-            # most recent observation!
-            self.o = self.o2
+        #     # Super critical, easy to overlook step: make sure to update 
+        #     # most recent observation!
+        #     self.o = self.o2
 
-            # End of trajectory handling
-            if d or (self.ep_len == self.max_ep_len):
-                self.logger.store(EpRet=self.ep_ret, EpLen=self.ep_len)
-                self.o, self.ep_ret, self.ep_len = self.env.reset(self.instances), 0, 0
+        #     # End of trajectory handling
+        #     if d or (self.ep_len == self.max_ep_len):
+        #         self.logger.store(EpRet=self.ep_ret, EpLen=self.ep_len)
+        #         self.o, self.ep_ret, self.ep_len = self.env.reset(self.instances), 0, 0
 
-            # Update handling
-            if t >= self.update_after and t % self.update_every == 0:
-                for _ in range(self.update_every):
-                    self.batch = self.replay_buffer.sample_batch(self.batch_size)
-                    self.update(data=self.batch)
+        #     # Update handling
+        #     if t >= self.update_after and t % self.update_every == 0:
+        #         for _ in range(self.update_every):
+        #             self.batch = self.replay_buffer.sample_batch(self.batch_size)
+        #             self.update(data=self.batch)
 
-            # End of epoch handling
-            if (t+1) % self.steps_per_epoch == 0:
-                self.epoch = (t+1) // self.steps_per_epoch
+        #     # End of epoch handling
+        #     if (t+1) % self.steps_per_epoch == 0:
+        #         self.epoch = (t+1) // self.steps_per_epoch
 
-                # Save model
-                if (self.epoch % self.save_freq == 0) or (self.epoch == self.epochs):
-                    self.logger.save_state({'env': self.env}, None)
+        #         # Save model
+                # if (self.epoch % self.save_freq == 0) or (self.epoch == self.epochs):
+        #             self.logger.save_state({'env': self.env}, None)
 
-                # Test the performance of the deterministic version of the agent.
-                self.test_agent()
+        #         # Test the performance of the deterministic version of the agent.
+        #         self.test_agent()
 
-                # Log info about epoch
-                self.logger.log_tabular('Epoch', self.epoch)
-                self.logger.log_tabular('EpRet', with_min_and_max=True)
-                self.logger.log_tabular('TestEpRet', with_min_and_max=True)
-                self.logger.log_tabular('EpLen', average_only=True)
-                self.logger.log_tabular('TestEpLen', average_only=True)
-                self.logger.log_tabular('TotalEnvInteracts', t)
-                self.logger.log_tabular('QVals', with_min_and_max=True)
-                self.logger.log_tabular('LossPi', average_only=True)
-                self.logger.log_tabular('LossQ', average_only=True)
-                self.logger.log_tabular('Time', time.time()-self.start_time)
-                self.logger.dump_tabular()
+        #         # Log info about epoch
+        #         self.logger.log_tabular('Epoch', self.epoch)
+        #         self.logger.log_tabular('EpRet', with_min_and_max=True)
+        #         self.logger.log_tabular('TestEpRet', with_min_and_max=True)
+        #         self.logger.log_tabular('EpLen', average_only=True)
+        #         self.logger.log_tabular('TestEpLen', average_only=True)
+        #         self.logger.log_tabular('TotalEnvInteracts', t)
+        #         self.logger.log_tabular('QVals', with_min_and_max=True)
+        #         self.logger.log_tabular('LossPi', average_only=True)
+        #         self.logger.log_tabular('LossQ', average_only=True)
+        #         self.logger.log_tabular('Time', time.time()-self.start_time)
+        #         self.logger.dump_tabular()
+    # def save(self, save_path):
+    #     self.logger.save_state({'setcover':0},None)
 
 # if __name__ == '__main__':
 #     import argparse

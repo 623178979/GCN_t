@@ -3,7 +3,7 @@ import scipy.signal
 
 import torch
 # from GCN_t.ddpg.model import GNNPolicy
-from ddpg.model import GNNPolicy
+from ddpg.model import GNNPolicy,GNNCriticmean
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -19,9 +19,6 @@ def mlp(sizes, activation, output_activation=torch.nn.Identity):
         layers += [torch.nn.Linear(sizes[j], sizes[j+1]), act()]
     return torch.nn.Sequential(*layers)
 
-# def gnn(sizes, activation, output_activation=torch.nn.Identity):
-
-#     pass
 
 def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
@@ -40,14 +37,23 @@ class MLPActor(torch.nn.Module):
     
 class GNNActor(torch.nn.Module):
 
-    def __init__(self, act_limit):
+    def __init__(self):
         super().__init__()
-        self.pi = GNNPolicy().to(DEVICE)
-        self.act_limit = act_limit
+        self.pi = GNNPolicy(print_ver=False).to(DEVICE)
+        # self.act_limit = act_limit
 
-    def forward(self, constraint_features, edge_indices, edge_features, variable_features):
-        return self.act_limit * self.pi(constraint_features, edge_indices, edge_features, variable_features)
+    def forward(self, obs):
+        return self.pi(obs)
 
+# class GNNCritic(torch.nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.q = GNNCriticmean().to(DEVICE)
+#         # self.act_limit = act_limit
+
+#     def forward(self, obs, action):
+#         return self.q(obs, action)
+    
 class MLPQFunction(torch.nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
@@ -62,10 +68,10 @@ class GNNQFunction(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.q = GNNPolicy().to(DEVICE)
+        self.q = GNNCriticmean().to(DEVICE)
 
-    def forward(self, obs, act):
-        q = self.q(torch.cat([obs, act], dim=1))
+    def forward(self, obs, action):
+        q = self.q(obs, action)
         return torch.squeeze(q, -1)
     
 
@@ -92,11 +98,17 @@ class GNNActorCritic(torch.nn.Module):
     def __init__(self):
         super().__init__()
         # act_limit = action_space.high[0]
-        act_limit = 0.8
-        self.pi = GNNActor(act_limit).to(DEVICE)
-        self.q = GNNQFunction()
+        # act_limit = 0.8
+        self.pi = GNNActor().to(DEVICE)
+        # self.q = GNNQFunction()
 
-    def act(self, constraint_features, edge_indices, edge_features, variable_features):
+    def act(self, obs):
         with torch.no_grad():
-            return self.pi(constraint_features, edge_indices, edge_features, variable_features).numpy()
+            # return self.pi(obs).numpy()
+            return self.pi(obs)
+
+class GNNCritic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.q = GNNQFunction().to(DEVICE)
 

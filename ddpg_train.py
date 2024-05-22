@@ -462,14 +462,14 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
     obje=[]
     bobj=[]
     ini_sol=[]
-
+    
     
     for sample in out_Q:
-        
+        # print(sample)
         ini_sol.append(sample['sol'])         
         
         collecter.append(sample['state'][2]['values'])
-
+        
 #        print(sample['state'][2]['values'].shape, sample['episode'])
 
         collecterM.append(np.transpose(sample['state'][1]['incidence']))
@@ -483,11 +483,11 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
         bobj.append(sample['b_obj'])
         
         i += 1
-
+    
     shap = np.stack(collecter).shape
 
     X=np.stack(collecter).reshape(-1,13)
-
+    # print(X)
     print(np.var(X, axis=0))
 
     feats = X[:,[0,1,3,4,5,6,8,9,12]]
@@ -495,20 +495,14 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 #    feats = X[:,[0,2,3,4,5,6,8,9,10,12]]
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
-    # print('shape epi:',np.shape(epi))
-    # # print('shape epi 0 and 1',np.shape(epi[0],',',np.shape(epi[1])))
-    # for i in range(np.shape(obje)[0]):
-    #     print(obje[i])
-    # print('shape obje:',np.shape(obje))
-    # print('shape bobj:',np.shape(bobj))
-    # print('shape ini_sol:',np.shape(ini_sol))
-    # print('collecterM:',len(collecterM))
+    
     for i in range(len(collecterM)):
         collecterM[i] = collecterM[i][:,:500]
         # print(np.shape(collecterM[i]))
     
+    # print(feats.reshape(shap[0],shap[1],-1)[0][0])
     return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances, np.stack(ini_sol), np.stack(collecterM)
-    # return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances
+    
 
 
 
@@ -516,8 +510,8 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
 def learn(args,network='gnn',
           nb_epochs=None, # with default settings, perform 1M steps total
-          nb_epoch_cycles=20,
-          nb_rollout_steps=100,
+          nb_epoch_cycles=25,
+          nb_rollout_steps=20,
           reward_scale=1.0,
           render=False,
           render_eval=False,
@@ -525,17 +519,17 @@ def learn(args,network='gnn',
           normalize_returns=False,
           normalize_observations=True,
           critic_l2_reg=1e-2,
-          actor_lr=1e-4,
-          critic_lr=1e-3,
+          actor_lr=1e-5,
+          critic_lr=1e-5,
           popart=False,
           gamma=0.99,
           clip_norm=None,
-          nb_train_steps=50, # per epoch cycle and MPI worker,
-          nb_eval_steps=100,
-          batch_size=64, # per MPI worker
+          nb_train_steps=6, # per epoch cycle and MPI worker,
+          nb_eval_steps=20,
+          batch_size=32, # per MPI worker
           tau=0.01,
           eval_env=None,
-          param_noise_adaption_interval=50,
+          param_noise_adaption_interval=30,
           save_path = 'model/',
           env = ec_env
           ):
@@ -547,12 +541,13 @@ def learn(args,network='gnn',
     exploration_strategy = 'relpscost'
 
     instances_valid = []
-    file_name = '/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/instance_3.lp'
+    # file_name = '/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/instance_3.lp'
     # instances_train = glob.glob('')
-    single_ins = Path(file_name)
-    instances_train = glob.glob('/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
-    # instances_train = Path(file_name)
-    instances_valid += ['data/instances/setcover/validation5000/instance_{}.lp'.format(i+1) for i in range(10)]
+    # single_ins = Path(file_name)
+    # instances_train = glob.glob('/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
+    instances_train = glob.glob('/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
+    # instances_valid += ['/home/yunbo/workspace/learn2branch/data/instances/setcover/valid_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
+    instances_valid += ['/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/validation5000//instance_{}.lp'.format(i+1) for i in range(10)]
     out_dir = '/home/yunbo/workspace/test'
 
     nb_epochs = 20
@@ -568,7 +563,7 @@ def learn(args,network='gnn',
 
     actor_critic = GNNActorCritic
 
-    agent = DDPG(env_fn=env, actor_critic=actor_critic,instances=single_ins)
+    agent = DDPG(actor_critic=actor_critic,batch_size=batch_size,critic_l2_reg=critic_l2_reg)
 
     # if args.gpu == -1:
     #     os.environ['CUDA_VISIBLE_DEVICES'] = ''
@@ -610,8 +605,11 @@ def learn(args,network='gnn',
                                 batch_id=cycle,
                                 eval_flag=eval_val,
                                 time_limit=None)
+                # cur_obs = np.concatenate()
+                print('epoch',epoch)
                 
                 nor_rd = formu_feat[:,:,0]
+                
                 init_sols = ini_sol
 
                 ori_objs=np.copy(best_root) 
@@ -628,11 +626,18 @@ def learn(args,network='gnn',
                 inc_val = np.stack([rec_inc[r][-1] for r in range(batch_sample)])
                 avg_inc_val = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample)])
                 current_obs = np.concatenate((formu_feat, inc_val[:,:,np.newaxis], avg_inc_val[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
-
+                # print(np.shape(formu_feat))
+                # print(np.shape(IM[1]))
+                # print(np.shape(current_obs))
+                temp = np.concatenate((current_obs,IM),axis=-1)
+                temp = np.reshape(temp,[-1,514])
+                print(np.shape(temp))
+                
                 for t_rollout in range(nb_rollout_steps):
-                    loss_q, loss_info = agent.compute_loss_q(IM)
-                    loss_pi = agent.compute_loss_pi(IM)
-                    obs,action,_,_,_ = ec_env.reset(IM)
+                    # loss_q, loss_info = agent.compute_loss_q(IM)
+                    # loss_pi = agent.compute_loss_pi(IM)
+                    # obs,action,_,_,_ = ec_env.reset(IM)
+                    action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
                     pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
 
                     action_n = np.copy(action)
@@ -650,10 +655,11 @@ def learn(args,network='gnn',
                                     eval_flag=eval_val,
                                     time_limit=time_limit) 
                     current_sols = next_sols.copy()
-
+                    print('epoch',epoch)
                     current_objs = np.multiply(nor_rd, next_sols).sum(1)
 
-                    # if t_rollout > 0:
+                    if t_rollout > 0:
+                        agent.store_trans(current_obs_s, action_s, r_s, next_obs_s, action, epi)
                     r = ori_objs - current_objs
 
                     inc_ind = np.where(current_objs < rec_best)[0]
@@ -675,12 +681,13 @@ def learn(args,network='gnn',
 
                 epoch_ac_loss = []
                 epoch_cr_loss = []
-                epoch_adaptive_loss = []
+                epoch_adaptive_distance = []
                 for t_train in range(nb_train_steps):
+                    print(t_train)
                     cr_l, ac_l = agent.train(IM)
                     epoch_ac_loss.append(ac_l)
                     epoch_cr_loss.append(cr_l)
-                    agent.update()
+                    # agent.update()
 
                 # evalue
                 if cycle%1==0:
@@ -696,12 +703,12 @@ def learn(args,network='gnn',
                                         batch_id=cyc,
                                         eval_flag=1,
                                         time_limit=None)
-                        
+                        print('eve_epoch',epoch)
 
                         init_sols = ini_sol
 
                         ori_objs = np.copy(best_root)
-                        current_objs = init_sols
+                        current_sols = init_sols
                         record_ini = np.copy(ori_objs)
 
                         pre_sols = np.zeros([2, batch_sample_eval, 1000])
@@ -710,12 +717,12 @@ def learn(args,network='gnn',
                         rec_best = np.copy(best_root)
                         incu_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
                         incu_val_avg = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])
+                        print('formu_feat,',formu_feat.shape)
+                        print('incu_val,',incu_val.shape)
                         current_obs = np.concatenate((formu_feat, incu_val[:,:,np.newaxis], incu_val_avg[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
 
                         for t_rollout in range(nb_eval_steps):
-                            loss_q, loss_info = agent.compute_loss_q(IM)
-                            loss_pi = agent.compute_loss_pi(IM)
-                            action = ec_env.reset(IM)
+                            action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
 
                             pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
 
@@ -732,7 +739,7 @@ def learn(args,network='gnn',
                                     args.njobs, exploration_policy=exploration_strategy,
                                     eval_flag=1,
                                     time_limit=time_limit) 
-                            
+                            print('eve_epoch',epoch)
                             inc_ind = np.where(current_objs < rec_best)[0]
                             [rec_inc[r].append(current_sols[r]) for r in inc_ind]
                             rec_best[inc_ind] = current_objs[inc_ind]
@@ -764,11 +771,11 @@ def learn(args,network='gnn',
                             csvfile.flush()
 
                         
-                if save_path is not None and ave<min_obj:
-                    print('if save_path')
-                    s_path = os.path.expanduser(save_path)
-                    agent.save(s_path)
-                    min_obj = ave
+                # if save_path is not None and ave<min_obj:
+                #     print('if save_path')
+                #     s_path = os.path.expanduser(save_path)
+                #     agent.save(s_path)
+                #     min_obj = ave
                             
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
