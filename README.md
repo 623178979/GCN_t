@@ -21,4 +21,4 @@ To specify the where to find SCIP and install
 
 Compile command
 
-'gcc -shared -fPIC -o execute.so execute.c -I/path/to/envs/envname/include -I/path/to/envs/envname/include/python3.8 -L/path/to/envs/envname/lib -lscip'
+`gcc -shared -fPIC -o execute.so execute.c -I/path/to/envs/envname/include -I/path/to/envs/envname/include/python3.8 -L/path/to/envs/envname/lib -lscip`
