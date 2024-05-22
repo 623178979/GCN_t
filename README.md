@@ -18,3 +18,7 @@ Download the ecole package [here](https://drive.google.com/file/d/1vXdfIeeoCctlH
 To specify the where to find SCIP and install
 
 `CMAKE_ARGS="-DSCIP_DIR=path/to/lib/cmake/scip -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON" python -m pip install .`
+
+Compile command
+
+'gcc -shared -fPIC -o execute.so execute.c -I/path/to/envs/envname/include -I/path/to/envs/envname/include/python3.8 -L/path/to/envs/envname/lib -lscip'
