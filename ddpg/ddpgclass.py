@@ -2,7 +2,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.optim import Adam
-import gym
+#import gym
 import time
 import ddpg.core as core
 from ddpg.utils.logx import EpochLogger
