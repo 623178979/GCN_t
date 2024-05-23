@@ -11,6 +11,8 @@
 
 `conda install cython`
 
+`conda install mpi4py`
+
 Download the ecole package [here](https://drive.google.com/file/d/1vXdfIeeoCctlHszhg7n1goBcEs052A0q/view?usp=drive_link) and extract it.
 
 `cd ecole_0.8.1`
