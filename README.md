@@ -7,11 +7,11 @@
 
 `conda create -n name python=3.8 pytorch scip=8.0.1 pyscipopt numpy`
 
-`conda install pyg -c pyg`
-
 `conda install cython`
 
 `conda install scipy`
+
+`conda install joblib`
 
 `conda install mpi4py`
 
