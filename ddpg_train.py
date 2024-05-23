@@ -515,8 +515,6 @@ def learn(args,network='gnn',
           nb_epoch_cycles=25,
           nb_rollout_steps=30,
           reward_scale=1.0,
-          render=False,
-          render_eval=False,
           noise_type=None,
           normalize_returns=False,
           normalize_observations=True,
@@ -543,9 +541,6 @@ def learn(args,network='gnn',
     exploration_strategy = 'relpscost'
 
     instances_valid = []
-    # file_name = '/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/instance_3.lp'
-    # instances_train = glob.glob('')
-    # single_ins = Path(file_name)
     instances_train = glob.glob('/home/yunbo/workspace/learn2branch/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
     # instances_train = glob.glob('/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
     instances_valid += ['/home/yunbo/workspace/learn2branch/data/instances/setcover/valid_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
@@ -564,12 +559,10 @@ def learn(args,network='gnn',
 
     actor_critic = GNNActorCritic
 
-    agent = DDPG(actor_critic=actor_critic,batch_size=batch_size,critic_l2_reg=critic_l2_reg)
+    agent = DDPG(actor_critic=actor_critic,batch_size=batch_size,critic_l2_reg=critic_l2_reg,pi_lr=actor_lr,q_lr=critic_lr,tau=tau,gamma=gamma)
 
 
     rng = np.random.RandomState(args.seed)
-
-    # ec_env.reset(Path(file_name))
 
     nenvs = batch_sample
 
@@ -589,8 +582,8 @@ def learn(args,network='gnn',
             'mean',
         ]
         print('epoch loop')
-        result = "test_{}.csv".format(time.strftime('%Y%m%d-%H%M%S'))
-        os.makedirs('results', exist_ok=True)
+        # result = "test_{}.csv".format(time.strftime('%Y%m%d-%H%M%S'))
+        # os.makedirs('results', exist_ok=True)
         # with open("results/{}".format(result),'w', newline='') as csvfile:
         #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         #     writer.writeheader()
@@ -602,8 +595,6 @@ def learn(args,network='gnn',
                             batch_id=cycle,
                             eval_flag=eval_val,
                             time_limit=None)
-            # cur_obs = np.concatenate()
-            # print('epoch',epoch)
             
             nor_rd = formu_feat[:,:,0]
             
@@ -626,9 +617,6 @@ def learn(args,network='gnn',
         
             
             for t_rollout in range(nb_rollout_steps):
-                # loss_q, loss_info = agent.compute_loss_q(IM)
-                # loss_pi = agent.compute_loss_pi(IM)
-                # obs,action,_,_,_ = ec_env.reset(IM)
                 print('epoch',epoch,'cycle',cycle,'t_rollout',t_rollout)
                 action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
                 pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)

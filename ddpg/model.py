@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-import torch_geometric
+# import torch_geometric
 import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
