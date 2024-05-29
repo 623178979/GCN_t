@@ -19,24 +19,21 @@ import csv
 
 import pyscipopt as scip
 import utilities
-import ecole
+
 from pathlib import Path
 
 from ddpg.core import GNNActorCritic
 from ddpg.ddpgclass import DDPG
-
+import extract
 scip_parameters = {
     "separating/maxrounds": 0,
     "presolving/maxrestarts": 0,
     "limits/time": 3600,
 }
-ec_env = ecole.environment.Branching(
-    observation_function = ecole.observation.NodeBipartite(),
-    scip_params=scip_parameters,
-)
-exec = ctypes.CDLL('/home/yunbo/workspace/GCN_t/execute.so')
-exec.executeBranchRule.argtypes = [ctypes.py_object, ctypes.c_char_p, ctypes.c_bool]
-exec.executeBranchRule.restype = ctypes.c_int
+
+# exec = ctypes.CDLL('/home/yunbo/workspace/GCN_t/execute.so')
+# exec.executeBranchRule.argtypes = [ctypes.py_object, ctypes.c_char_p, ctypes.c_bool]
+# exec.executeBranchRule.restype = ctypes.c_int
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # @profile
 def make_samples(in_queue):
@@ -277,15 +274,15 @@ class SamplingAgent0(scip.Branchrule):
         # custom policy branching           
         if self.model.getNNodes() == 1:    
             self.model_ptr = self.model.to_ptr(True)
-            self.model_1 = ecole.scip.Model.from_file(self.instance)
+            # self.model_1 = ecole.scip.Model.from_file(self.instance)
             # self.model_1 = ecole.scip.Model.from_pyscipopt(self.model)
             # extract formula features
             self.state = utilities.extract_state(self.model, self.model_ptr, self.state_buffer)
             # self.state = ecole.observation.NodeBipartite().extract()            
             # print(self.state)
-            
-            self.name = ctypes.c_char_p(self.exploration_policy.encode('utf-8'))
-            result_code = exec.executeBranchRule(self.model_ptr, self.name, allowaddcons)
+            result_code = extract.executeBranchRule(self.model_ptr, self.exploration_policy, allowaddcons)
+            # self.name = ctypes.c_char_p(self.exploration_policy.encode('utf-8'))
+            # result_code = exec.executeBranchRule(self.model_ptr, self.name, allowaddcons)
             
             # result = self.model.executeBranchRule(self.exploration_policy, allowaddcons)
             # exec.getState.argtypes = [ctypes.py_object, ctypes.py_object]
@@ -500,6 +497,10 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
     
+    for i in range(len(collecterM)):
+        print(np.shape(collecterM[i]))
+        # collecterM[i] = collecterM[i][:,:5000]
+        collecterM[i] = collecterM[i][:,:500]
         
     del out_Q
     # print(feats.reshape(shap[0],shap[1],-1)[0][0])
@@ -525,36 +526,35 @@ def learn(args,network='gnn',
           gamma=0.99,
           clip_norm=None,
           nb_train_steps=5,#6, # per epoch cycle and MPI worker,
-          nb_eval_steps=8,
+          nb_eval_steps=20,
           batch_size=16, # per MPI worker
           tau=0.01,
           eval_env=None,
           param_noise_adaption_interval=30,
-        #   save_path = './GCN_t/model',
-          save_path = None,
-        #   load_path = None,
-          load_path = './GCN_t/model',
-          env = ec_env
+          save_path = './GCN_t/model',
+        #   save_path = None,
+          load_path = None,
+        #   load_path = './GCN_t/model',
           ):
     
     batch_sample = 8
-    batch_sample_eval = 8
+    batch_sample_eval = 10
     eval_val = 0
     time_limit = 2
     exploration_strategy = 'relpscost'
 
     instances_valid = []
-    instances_train = glob.glob('/home/yunbo/workspace/GCN_t/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
-    # instances_train = glob.glob('/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
-    instances_valid += ['/home/yunbo/workspace/GCN_t/data/instances/setcover/valid_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
-    # instances_valid += ['/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/validation5000//instance_{}.lp'.format(i+1) for i in range(10)]
+    # instances_train = glob.glob('/home/yunbo/workspace/GCN_t/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
+    instances_train = glob.glob('/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
+    # instances_valid += ['/home/yunbo/workspace/GCN_t/data/instances/setcover/valid_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
+    instances_valid += ['/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/validation5000//instance_{}.lp'.format(i+1) for i in range(10)]
     out_dir = '/home/yunbo/workspace/test'
 
-    nb_epochs = 1 #20
-    nb_epoch_cycles = 5#len(instances_train)//batch_sample
+    nb_epochs = 20 #20
+    nb_epoch_cycles = 10#len(instances_train)//batch_sample
     
     
-    nb_rollout_steps = 8 #30
+    nb_rollout_steps = 30 #30
 
     # print("{} train instances for {} samples".format(len(instances_train),nb_epoch_cycles*nb_epochs*batch_sample))
 

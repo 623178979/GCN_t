@@ -19,24 +19,22 @@ import csv
 
 import pyscipopt as scip
 import utilities
-import ecole
+
 from pathlib import Path
 
 from ddpg.core import GNNActorCritic
 from ddpg.ddpgclass import DDPG
+import extract
 
 scip_parameters = {
     "separating/maxrounds": 0,
     "presolving/maxrestarts": 0,
     "limits/time": 3600,
 }
-ec_env = ecole.environment.Branching(
-    observation_function = ecole.observation.NodeBipartite(),
-    scip_params=scip_parameters,
-)
-exec = ctypes.CDLL('/home/yunbo/workspace/GCN_t/execute.so')
-exec.executeBranchRule.argtypes = [ctypes.py_object, ctypes.c_char_p, ctypes.c_bool]
-exec.executeBranchRule.restype = ctypes.c_int
+
+# exec = ctypes.CDLL('/home/yunbo/workspace/GCN_t/execute.so')
+# exec.executeBranchRule.argtypes = [ctypes.py_object, ctypes.c_char_p, ctypes.c_bool]
+# exec.executeBranchRule.restype = ctypes.c_int
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # @profile
 def make_samples(in_queue):
@@ -233,15 +231,15 @@ class SamplingAgent0(scip.Branchrule):
         # custom policy branching           
         if self.model.getNNodes() == 1:    
             self.model_ptr = self.model.to_ptr(True)
-            self.model_1 = ecole.scip.Model.from_file(self.instance)
+            # self.model_1 = ecole.scip.Model.from_file(self.instance)
             # self.model_1 = ecole.scip.Model.from_pyscipopt(self.model)
             # extract formula features
             self.state = utilities.extract_state(self.model_1, self.state_buffer)
             # self.state = ecole.observation.NodeBipartite().extract()            
             # print(self.state)
             
-            self.name = ctypes.c_char_p(self.exploration_policy.encode('utf-8'))
-            result_code = exec.executeBranchRule(self.model_ptr, self.name, allowaddcons)
+            # self.name = ctypes.c_char_p(self.exploration_policy.encode('utf-8'))
+            result_code = extract.executeBranchRule(self.model_ptr, self.exploration_policy, allowaddcons)
             
             # result = self.model.executeBranchRule(self.exploration_policy, allowaddcons)
             # exec.getState.argtypes = [ctypes.py_object, ctypes.py_object]
@@ -454,7 +452,11 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
     
-
+    for i in range(len(collecterM)):
+        print(np.shape(collecterM[i]))
+        # collecterM[i] = collecterM[i][:,:5000]
+        collecterM[i] = collecterM[i][:,:500]
+        
     del out_Q
     # print(feats.reshape(shap[0],shap[1],-1)[0][0])
     return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances, np.stack(ini_sol), np.stack(collecterM)
@@ -488,7 +490,6 @@ def learn(args,network='gnn',
           save_path = None,
         #   load_path = None,
           load_path = './GCN_t/model',
-          env = ec_env
           ):
     
     batch_sample = 25
