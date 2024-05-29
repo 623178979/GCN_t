@@ -35,7 +35,7 @@ scip_parameters = {
 # exec.executeBranchRule.argtypes = [ctypes.py_object, ctypes.c_char_p, ctypes.c_bool]
 # exec.executeBranchRule.restype = ctypes.c_int
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# @profile
+@profile
 def make_samples(in_queue):
     """
     Worker loop: fetch an instance, run an episode and record samples.
@@ -127,7 +127,7 @@ def make_samples(in_queue):
     
     return out_queue
 
-# @profile
+@profile
 def send_orders(instances, epi, obs, actions, seed, exploration_policy, eval_flag, time_limit, out_dir):
     """
     Continuously send sampling orders to workers (relies on limited
@@ -162,7 +162,7 @@ def send_orders(instances, epi, obs, actions, seed, exploration_policy, eval_fla
 
     return orders_queue
 
-# @profile
+@profile
 def collect_samples(instances, epi, obs, actions, out_dir, rng, n_samples, n_jobs,
                     exploration_policy, eval_flag, time_limit):
     """
@@ -307,7 +307,7 @@ class SamplingAgent0(scip.Branchrule):
         
         return {'result': result}
 
-# @profile
+@profile
 def make_samples0(in_queue):
     """
     Worker loop: fetch an instance, run an episode and record samples.
@@ -376,7 +376,7 @@ def make_samples0(in_queue):
     # m.re
     return out_queue
 
-# @profile
+@profile
 def send_orders0(instances, n_samples, seed, exploration_policy, batch_id, eval_flag, time_limit, out_dir):
     """
     Continuously send sampling orders to workers (relies on limited
@@ -411,7 +411,7 @@ def send_orders0(instances, n_samples, seed, exploration_policy, batch_id, eval_
     return orders_queue
 
 
-# @profile
+@profile
 def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
                     exploration_policy, batch_id, eval_flag, time_limit):
     """
@@ -497,11 +497,7 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
     
-    for i in range(len(collecterM)):
-        print(np.shape(collecterM[i]))
-        # collecterM[i] = collecterM[i][:,:5000]
-        collecterM[i] = collecterM[i][:,:500]
-        
+     
     del out_Q
     # print(feats.reshape(shap[0],shap[1],-1)[0][0])
     return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances, np.stack(ini_sol), np.stack(collecterM)
@@ -510,7 +506,7 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
 
 
-# @profile
+@profile
 def learn(args,network='gnn',
           nb_epochs=None, # with default settings, perform 1M steps total
           nb_epoch_cycles=25,
@@ -756,11 +752,11 @@ def learn(args,network='gnn',
                         #     csvfile.flush()
 
                         
-                if save_path is not None and ave<min_obj:
-                    print('if save_path')
-                    s_path = os.path.expanduser(save_path)
-                    agent.save(s_path)
-                    min_obj = ave
+                # if save_path is not None and ave<min_obj:
+                #     print('if save_path')
+                #     s_path = os.path.expanduser(save_path)
+                #     agent.save(s_path)
+                #     min_obj = ave
                             
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

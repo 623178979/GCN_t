@@ -452,11 +452,7 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
     
-    for i in range(len(collecterM)):
-        print(np.shape(collecterM[i]))
-        # collecterM[i] = collecterM[i][:,:5000]
-        collecterM[i] = collecterM[i][:,:500]
-        
+
     del out_Q
     # print(feats.reshape(shap[0],shap[1],-1)[0][0])
     return feats.reshape(shap[0],shap[1],-1), np.stack(epi), np.stack(obje), np.stack(bobj), instances, np.stack(ini_sol), np.stack(collecterM)
