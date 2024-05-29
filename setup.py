@@ -19,7 +19,7 @@ extensions = [
                             "/home/yunbo/anaconda3/pkgs/pyscipopt-4.2.0-py38hfa26641_2/lib/python3.8/site-packages/pyscipopt",
                             "/home/yunbo/anaconda3/pkgs/numpy-1.24.4-py38h59b608b_0/lib/python3.8/site-packages/numpy/core/include"
                             ],
-              library_dirs=["/path/to/scip/lib"],
+              library_dirs=["/home/yunbo/anaconda3/envs/test/lib"],
               libraries=["scip"],),
               
 
