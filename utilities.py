@@ -5,6 +5,9 @@ import pyscipopt as scip
 import pickle
 import gzip
 import ecole
+from memory_profiler import profile
+import gc
+import extract
 env = ecole.environment.Branching(
     observation_function=ecole.observation.NodeBipartite(),
 )
@@ -147,8 +150,8 @@ def init_scip_paramsR(model, seed, heuristics=True, presolving=True, separating=
 
 
 
-
-def extract_state(model, buffer=None):
+# @profile
+def extract_state(model, model_ptr, buffer=None):
     """
     Compute a bipartite graph representation of the solver. In this
     representation, the variables and constraints of the MILP are the
@@ -173,78 +176,81 @@ def extract_state(model, buffer=None):
     constraint_features : dictionary of type {'names': list, 'values': np.ndarray}
         The features associated with the constraint nodes in the bipartite graph.
     """
-    model_1 = ecole.scip.Model.as_pyscipopt(model)
-    empty_flag = 0
-    if buffer is None or model_1.getNNodes() == 1:
+    # model_1 = ecole.scip.Model.as_pyscipopt(model)
+    # empty_flag = 0
+    # if buffer is None or model_1.getNNodes() == 1:
+    if buffer is None or model.getNNodes() == 1:
 
         buffer = {}
-        empty_flag = 1
+        # empty_flag = 1
     
     # update state from buffer if any
     # s = model.getState(buffer['scip_state'] if 'scip_state' in buffer else None)
     # model_1 = ecole.scip.Model.from_pyscipopt(model)
-    ec_ob = ecole.observation.NodeBipartite()
-    # if 'scip_state' in buffer:
-    ec_ob.before_reset(model)
-    dyn = ecole.dynamics.PrimalSearchDynamics()
-    # dyn = ecole.dynamics.BranchingDynamics()
-    dyn.reset_dynamics(model)
-    s = ec_ob.extract(model,False)
+    # ec_ob = ecole.observation.NodeBipartite()
+    # # if 'scip_state' in buffer:
+    # ec_ob.before_reset(model)
+    # dyn = ecole.dynamics.PrimalSearchDynamics()
+    # # dyn = ecole.dynamics.BranchingDynamics()
+    # dyn.reset_dynamics(model)
+    # s = ec_ob.extract(model,False)
+    s = extract.getState(model_ptr, buffer['scip_state'] if 'scip_state' in buffer else None)
     buffer['scip_state'] = s
     # print(s)
-    if 'state' in buffer and empty_flag == 0:
+    if 'state' in buffer:
       
         obj_norm = buffer['state']['obj_norm']
         # obj_norm = np.linalg.norm(s.variable_features[:,0])
     else:
-        # obj_norm = np.linalg.norm(s['col']['coefs'])
-        obj_norm = np.linalg.norm(s.variable_features[:,0])
+        obj_norm = np.linalg.norm(s['col']['coefs'])
+        # obj_norm = np.linalg.norm(s.variable_features[:,0])
         obj_norm = 1 if obj_norm <= 0 else obj_norm
 
     # temp = model_1.getLPRowsData()
     # print(len(temp))
-    # row_norms = s['row']['norms']
-    # row_norms[row_norms == 0] = 1
+    row_norms = s['row']['norms']
+    row_norms[row_norms == 0] = 1
 
     # Column features
-    # n_cols = len(s['col']['types'])
-    n_cols = s.variable_features.shape[0]
+    n_cols = len(s['col']['types'])
+    # n_cols = s.variable_features.shape[0]
     # print('n_cols',n_cols)
 
-    if 'state' in buffer and empty_flag == 0:
+    if 'state' in buffer:
         col_feats = buffer['state']['col_feats']
     else:
         col_feats = {}
-        # col_feats['type'] = np.zeros((n_cols, 4))  # BINARY INTEGER IMPLINT CONTINUOUS
-        # col_feats['type'][np.arange(n_cols), s['col']['types']] = 1
-        col_feats['type'] = s.variable_features[:,1:5]
-        col_feats['coef_normalized'] = s.variable_features[:,0].reshape(-1, 1) / obj_norm
+        col_feats['type'] = np.zeros((n_cols, 4))  # BINARY INTEGER IMPLINT CONTINUOUS
+        col_feats['type'][np.arange(n_cols), s['col']['types']] = 1
+        # col_feats['type'] = s.variable_features[:,1:5]
+        # col_feats['coef_normalized'] = s.variable_features[:,0].reshape(-1, 1) / obj_norm
+        col_feats['coef_normalized'] = s['col']['coefs'].reshape(-1, 1) / obj_norm
 
-    # col_feats['has_lb'] = ~np.isnan(s['col']['lbs']).reshape(-1, 1)
-    col_feats['has_lb'] = ~np.isnan(s.variable_features[:,5]).reshape(-1, 1)
-    # col_feats['has_ub'] = ~np.isnan(s['col']['ubs']).reshape(-1, 1)
-    col_feats['has_ub'] = ~np.isnan(s.variable_features[:,6]).reshape(-1, 1)
-    # col_feats['sol_is_at_lb'] = s['col']['sol_is_at_lb'].reshape(-1, 1)
-    col_feats['sol_is_at_lb'] = s.variable_features[:,10].reshape(-1, 1)
-    # col_feats['sol_is_at_ub'] = s['col']['sol_is_at_ub'].reshape(-1, 1)
-    col_feats['sol_is_at_ub'] = s.variable_features[:,11].reshape(-1, 1)
-    # col_feats['sol_frac'] = s['col']['solfracs'].reshape(-1, 1)
-    col_feats['sol_frac'] = s.variable_features[:,9].reshape(-1, 1)
-    # col_feats['sol_frac'][s['col']['types'] == 3] = 0  # continuous have no fractionality
-    col_feats['sol_frac'][s.variable_features[:,4] == 1] = 0
-    # col_feats['basis_status'] = np.zeros((n_cols, 4))  # LOWER BASIC UPPER ZERO
-    col_feats['basis_status'] = s.variable_features[:,15:]
-    # col_feats['basis_status'][np.arange(n_cols), s['col']['basestats']] = 1
-    # col_feats['reduced_cost'] = s['col']['redcosts'].reshape(-1, 1) / obj_norm
-    col_feats['reduced_cost'] = s.variable_features[:,7].reshape(-1, 1)
-    # col_feats['age'] = s['col']['ages'].reshape(-1, 1) / (s['stats']['nlps'] + 5)
-    col_feats['age'] = s.variable_features[:,12].reshape(-1, 1)
-    # col_feats['sol_val'] = s['col']['solvals'].reshape(-1, 1)
-    col_feats['sol_val'] = s.variable_features[:,8].reshape(-1, 1)
-    # col_feats['inc_val'] = s['col']['incvals'].reshape(-1, 1)
-    col_feats['inc_val'] = s.variable_features[:,13].reshape(-1, 1)
-    # col_feats['avg_inc_val'] = s['col']['avgincvals'].reshape(-1, 1)
-    col_feats['avg_inc_val'] = s.variable_features[:,14].reshape(-1, 1)
+    col_feats['has_lb'] = ~np.isnan(s['col']['lbs']).reshape(-1, 1)
+    # col_feats['has_lb'] = ~np.isnan(s.variable_features[:,5]).reshape(-1, 1)
+    col_feats['has_ub'] = ~np.isnan(s['col']['ubs']).reshape(-1, 1)
+    # col_feats['has_ub'] = ~np.isnan(s.variable_features[:,6]).reshape(-1, 1)
+    col_feats['sol_is_at_lb'] = s['col']['sol_is_at_lb'].reshape(-1, 1)
+    # col_feats['sol_is_at_lb'] = s.variable_features[:,10].reshape(-1, 1)
+    col_feats['sol_is_at_ub'] = s['col']['sol_is_at_ub'].reshape(-1, 1)
+    # col_feats['sol_is_at_ub'] = s.variable_features[:,11].reshape(-1, 1)
+    col_feats['sol_frac'] = s['col']['solfracs'].reshape(-1, 1)
+    # col_feats['sol_frac'] = s.variable_features[:,9].reshape(-1, 1)
+    col_feats['sol_frac'][s['col']['types'] == 3] = 0  # continuous have no fractionality
+    # col_feats['sol_frac'][s.variable_features[:,4] == 1] = 0
+    col_feats['basis_status'] = np.zeros((n_cols, 4))  # LOWER BASIC UPPER ZERO
+    # col_feats['basis_status'] = s.variable_features[:,15:]
+    col_feats['basis_status'][np.arange(n_cols), s['col']['basestats']] = 1
+    col_feats['reduced_cost'] = s['col']['redcosts'].reshape(-1, 1) / obj_norm
+    # col_feats['reduced_cost'] = s.variable_features[:,7].reshape(-1, 1)
+    col_feats['age'] = s['col']['ages'].reshape(-1, 1) / (s['stats']['nlps'] + 5)
+    # col_feats['age'] = s.variable_features[:,12].reshape(-1, 1)
+    col_feats['sol_val'] = s['col']['solvals'].reshape(-1, 1)
+    # col_feats['sol_val'] = s.variable_features[:,8].reshape(-1, 1)
+    col_feats['inc_val'] = s['col']['incvals'].reshape(-1, 1)
+    # col_feats['inc_val'] = s.variable_features[:,13].reshape(-1, 1)
+    col_feats['avg_inc_val'] = s['col']['avgincvals'].reshape(-1, 1)
+    # col_feats['avg_inc_val'] = s.variable_features[:,14].reshape(-1, 1)
     # col_feats = {}
     
 
@@ -264,32 +270,32 @@ def extract_state(model, buffer=None):
     # print(len(variable_features['values']))
     # Row features
 
-    if 'state' in buffer and empty_flag == 0:
+    if 'state' in buffer:
         row_feats = buffer['state']['row_feats']
-        # has_lhs = buffer['state']['has_lhs']
-        # has_rhs = buffer['state']['has_rhs']
+        has_lhs = buffer['state']['has_lhs']
+        has_rhs = buffer['state']['has_rhs']
     else:
         row_feats = {}
-        # has_lhs = np.nonzero(~np.isnan(s['row']['lhss']))[0]
-        # has_rhs = np.nonzero(~np.isnan(s['row']['rhss']))[0]
-        # row_feats['obj_cosine_similarity'] = np.concatenate((
-        #     -s['row']['objcossims'][has_lhs],
-        #     +s['row']['objcossims'][has_rhs])).reshape(-1, 1)
-        row_feats['obj_cosine_similarity'] = s.row_features[:,1].reshape(-1, 1)
-        # row_feats['bias'] = np.concatenate((
-        #     -(s['row']['lhss'] / row_norms)[has_lhs],
-        #     +(s['row']['rhss'] / row_norms)[has_rhs])).reshape(-1, 1)
-        row_feats['bias'] = s.row_features[:,0].reshape(-1, 1)
+        has_lhs = np.nonzero(~np.isnan(s['row']['lhss']))[0]
+        has_rhs = np.nonzero(~np.isnan(s['row']['rhss']))[0]
+        row_feats['obj_cosine_similarity'] = np.concatenate((
+            -s['row']['objcossims'][has_lhs],
+            +s['row']['objcossims'][has_rhs])).reshape(-1, 1)
+        # row_feats['obj_cosine_similarity'] = s.row_features[:,1].reshape(-1, 1)
+        row_feats['bias'] = np.concatenate((
+            -(s['row']['lhss'] / row_norms)[has_lhs],
+            +(s['row']['rhss'] / row_norms)[has_rhs])).reshape(-1, 1)
+        # row_feats['bias'] = s.row_features[:,0].reshape(-1, 1)
 
-    # row_feats['is_tight'] = np.concatenate((
-    #     s['row']['is_at_lhs'][has_lhs],
-    #     s['row']['is_at_rhs'][has_rhs])).reshape(-1, 1)
-    row_feats['is_tight'] = s.row_features[:,2].reshape(-1, 1)
+    row_feats['is_tight'] = np.concatenate((
+        s['row']['is_at_lhs'][has_lhs],
+        s['row']['is_at_rhs'][has_rhs])).reshape(-1, 1)
+    # row_feats['is_tight'] = s.row_features[:,2].reshape(-1, 1)
 
-    # row_feats['age'] = np.concatenate((
-    #     s['row']['ages'][has_lhs],
-    #     s['row']['ages'][has_rhs])).reshape(-1, 1) / (s['stats']['nlps'] + 5)
-    row_feats['age'] = s.row_features[:,4].reshape(-1, 1)
+    row_feats['age'] = np.concatenate((
+        s['row']['ages'][has_lhs],
+        s['row']['ages'][has_rhs])).reshape(-1, 1) / (s['stats']['nlps'] + 5)
+    # row_feats['age'] = s.row_features[:,4].reshape(-1, 1)
 
     # # redundant with is_tight
     # tmp = s['row']['basestats']  # LOWER BASIC UPPER ZERO
@@ -305,12 +311,12 @@ def extract_state(model, buffer=None):
     # row_feats['basis_status'] = np.zeros((len(has_lhs) + len(has_rhs), 3))
     # row_feats['basis_status'][np.arange(len(has_lhs) + len(has_rhs)), tmp] = 1
 
-    # tmp = s['row']['dualsols'] / (row_norms * obj_norm)
-    # row_feats['dualsol_val_normalized'] = np.concatenate((
-    #         -tmp[has_lhs],
-    #         +tmp[has_rhs])).reshape(-1, 1)
-    row_feats['dualsol_val_normalized'] = s.row_features[:,3].reshape(-1, 1)
-    # n_rows = 5
+    tmp = s['row']['dualsols'] / (row_norms * obj_norm)
+    row_feats['dualsol_val_normalized'] = np.concatenate((
+            -tmp[has_lhs],
+            +tmp[has_rhs])).reshape(-1, 1)
+    # row_feats['dualsol_val_normalized'] = s.row_features[:,3].reshape(-1, 1)
+
 
     row_feat_names = ['bias', 'age', 'dualsol_val_normalized', 'obj_cosine_similarity', 'is_tight']
     # row_feat_names = ['bias','objective_cosine_similarity','is_tight','dual_solution_value','scaled_age']
@@ -324,45 +330,43 @@ def extract_state(model, buffer=None):
     # print(constraint_features)
 
     # Edge features
-    if 'state' in buffer and empty_flag == 0:
+    if 'state' in buffer:
         edge_row_idxs = buffer['state']['edge_row_idxs']
         edge_col_idxs = buffer['state']['edge_col_idxs']
         edge_feats = buffer['state']['edge_feats']
+        print('state in buffer and empty=0')
     else:
-        # coef_matrix = sp.csr_matrix(
-        #     (s['nzrcoef']['vals'] / row_norms[s['nzrcoef']['rowidxs']],
-        #     (s['nzrcoef']['rowidxs'], s['nzrcoef']['colidxs'])),
-        #     shape=(len(s['row']['nnzrs']), len(s['col']['types'])))
-        
         coef_matrix = sp.csr_matrix(
-            (s.edge_features.values,
-            (s.edge_features.indices[0],s.edge_features.indices[1])),
-            shape=s.edge_features.shape
-        )
-
+            (s['nzrcoef']['vals'] / row_norms[s['nzrcoef']['rowidxs']],
+            (s['nzrcoef']['rowidxs'], s['nzrcoef']['colidxs'])),
+            shape=(len(s['row']['nnzrs']), len(s['col']['types'])))
+        
+        # coef_matrix = sp.csr_matrix(
+        #     (s.edge_features.values,
+        #     (s.edge_features.indices[0],s.edge_features.indices[1])),
+        #     shape=s.edge_features.shape
+        # )
 
         coe_M = coef_matrix.toarray()
+        # print(coe_M)
 
-        # coef_matrix = sp.vstack((
-        #     -coef_matrix[has_lhs, :],
-        #     coef_matrix[has_rhs, :])).tocoo(copy=False)
+        coef_matrix = sp.vstack((
+            -coef_matrix[has_lhs, :],
+            coef_matrix[has_rhs, :])).tocoo(copy=False)
 
-        # edge_row_idxs, edge_col_idxs = coef_matrix.row, coef_matrix.col
-        edge_row_idxs, edge_col_idxs = s.edge_features.indices[0], s.edge_features.indices[1]
+        edge_row_idxs, edge_col_idxs = coef_matrix.row, coef_matrix.col
+        # edge_row_idxs, edge_col_idxs = s.edge_features.indices[0], s.edge_features.indices[1]
         edge_feats = {}
 
         edge_feats['coef_normalized'] = coef_matrix.data.reshape(-1, 1)
 
     edge_feat_names = [[k, ] if v.shape[1] == 1 else ['{}_{}'.format(k,i) for i in range(v.shape[1])] for k, v in edge_feats.items()]
     edge_feat_names = [n for names in edge_feat_names for n in names]
-    # edge_feat_indices = np.vstack([edge_row_idxs, edge_col_idxs])
-    edge_feat_indices = s.edge_features.indices.astype(np.int32)
+    edge_feat_indices = np.vstack([edge_row_idxs, edge_col_idxs])
+    # edge_feat_indices = s.edge_features.indices.astype(np.int32)
     edge_feat_vals = np.concatenate(list(edge_feats.values()), axis=-1)
     # edge_feat_vals = np.concatenate(s.edge_features.values, axis=-1)
-    # coe_M = np.zeros([s[0].variable_features.shape[0], s[0].row_features.shape[0]])
-    # coe_M[edge_feat_indices[0],edge_feat_indices[1]] = np.expand_dims(s[0].edge_features.values, axis=-1)
-    # print(edge_feat_indices)
-    # print(edge_feat_indices_1)
+
     edge_features = {
         'names': edge_feat_names,
         'indices': edge_feat_indices,
@@ -374,8 +378,8 @@ def extract_state(model, buffer=None):
             'obj_norm': obj_norm,
             'col_feats': col_feats,
             'row_feats': row_feats,
-            # 'has_lhs': has_lhs,
-            # 'has_rhs': has_rhs,
+            'has_lhs': has_lhs,
+            'has_rhs': has_rhs,
             'edge_row_idxs': edge_row_idxs,
             'edge_col_idxs': edge_col_idxs,
             'edge_feats': edge_feats,
@@ -383,6 +387,8 @@ def extract_state(model, buffer=None):
     if variable_features['values'].shape[0]==0:
 
         print(s)
+    del model
+    gc.collect()
     return constraint_features, edge_features, variable_features
 
 

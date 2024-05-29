@@ -69,28 +69,9 @@ def make_samples(in_queue):
         
     varss = [x for x in m.getVars()]             
         
-        # decide the fixed variables based on actions                              
-#        minimum_k = tf.nn.top_k(-actions, k=700)[1].numpy()       #???? 
-
-#    minimum_k = np.argpartition(-actions.squeeze(), -700)[-700:]       #???? 
-
-#    minimum_k = np.where(np.array(actions.squeeze())<0.5)
-
-#    minimum_k = np.where(np.random.binomial(1, actions) <0.5)
-
     
     if eval_flag==1:
 
-#######1
-
-#        minimum_k = np.argpartition(-actions.squeeze(), -700)[-700:]       #???? 
-#        for i in minimum_k:
-#            a,b = m.fixVar(varss[i],obs[i])  
-    
-#######2
-#        minimum_k = np.where(np.random.binomial(1, actions) <0.5)
-
-######3
         minimum_k = np.where(np.array(actions.squeeze())<0.5)
         max_k = np.where(np.array(actions.squeeze())>0.5)[0]
         min_k = minimum_k
@@ -155,13 +136,10 @@ def send_orders(instances, epi, obs, actions, seed, exploration_policy, eval_fla
     """
     rng = np.random.RandomState(seed)
 
-#    episode = 0
     orders_queue = []
     for i in range(len(instances)):
-#        instance = rng.choice(instances)
         seed = rng.randint(2**32)
         orders_queue.append([epi[i], instances[i], obs[i], actions[i], seed, exploration_policy, eval_flag, time_limit, out_dir])
-#        episode += 1
 
     return orders_queue
 
@@ -194,31 +172,9 @@ def collect_samples(instances, epi, obs, actions, out_dir, rng, n_samples, n_job
         Maximum running time for an episode, in seconds.
     """
 
-    # start workers
-#     orders_queue = mp.Queue(maxsize=2*n_jobs)
-#     answers_queue = mp.SimpleQueue()
-#     workers = []
-    
-#     for i in range(n_jobs):
-#         abc=time.time()
-#         p = mp.Process(
-#                 target=make_samples,
-#                 args=(orders_queue, answers_queue),
-#                 daemon=True)
-#         workers.append(p)
-#         p.start()
-#         print(time.time()-abc) 
-
     tmp_samples_dir = '{}/tmp'.format(out_dir)
     os.makedirs(tmp_samples_dir, exist_ok=True)
     
-    # start dispatcher
-#     dispatcher = mp.Process(
-#             target=send_orders,
-#             args=(orders_queue, instances, epi, obs, actions, rng.randint(2**32), exploration_policy, query_expert_prob, time_limit, tmp_samples_dir),
-#             daemon=True)
-#     dispatcher.start()
-
     pars = send_orders(instances, epi, obs, actions, rng.randint(2**32), exploration_policy, eval_flag, time_limit, tmp_samples_dir) 
     
     out_Q = []
@@ -280,7 +236,7 @@ class SamplingAgent0(scip.Branchrule):
             self.model_1 = ecole.scip.Model.from_file(self.instance)
             # self.model_1 = ecole.scip.Model.from_pyscipopt(self.model)
             # extract formula features
-            self.state = utilities.extract_state(self.model, self.model_ptr, self.state_buffer)
+            self.state = utilities.extract_state(self.model_1, self.state_buffer)
             # self.state = ecole.observation.NodeBipartite().extract()            
             # print(self.state)
             
@@ -496,8 +452,6 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
 
     feats = X[:,[0,1,3,4,5,6,8,9,12]]
 
-#    feats = X[:,[0,2,3,4,5,6,8,9,10,12]]
-
     shutil.rmtree(tmp_samples_dir, ignore_errors=True)
     
     for i in range(len(collecterM)):
@@ -523,14 +477,14 @@ def learn(args,network='gnn',
           normalize_returns=False,
           normalize_observations=True,
           critic_l2_reg=1e-2,
-          actor_lr=1e-5,
-          critic_lr=1e-5,
+          actor_lr=1e-4,
+          critic_lr=1e-3,
           popart=False,
           gamma=0.99,
           clip_norm=None,
-          nb_train_steps=5,#6, # per epoch cycle and MPI worker,
-          nb_eval_steps=8,
-          batch_size=16, # per MPI worker
+          nb_train_steps=1,#6, # per epoch cycle and MPI worker,
+          nb_eval_steps=50,
+          batch_size=32, # per MPI worker
           tau=0.01,
           eval_env=None,
           param_noise_adaption_interval=30,
@@ -541,8 +495,8 @@ def learn(args,network='gnn',
           env = ec_env
           ):
     
-    batch_sample = 8
-    batch_sample_eval = 8
+    batch_sample = 25
+    batch_sample_eval = 10
     eval_val = 0
     time_limit = 2
     exploration_strategy = 'relpscost'
@@ -550,15 +504,15 @@ def learn(args,network='gnn',
     instances_valid = []
     instances_train = glob.glob('/home/yunbo/workspace/GCN_t/data/instances/setcover/train_500r_1000c_0.05d/*.lp')
     # instances_train = glob.glob('/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
-    instances_valid += ['/home/yunbo/workspace/GCN_t/data/instances/setcover/valid_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
+    instances_valid += ['/home/yunbo/workspace/GCN_t/data/instances/setcover/test_500r_1000c_0.05d/instance_{}.lp'.format(i+1) for i in range(10)]
     # instances_valid += ['/home/yunbo/workspace/Learn-LNS-policy/LNS_SC/data/instances/setcover/validation5000//instance_{}.lp'.format(i+1) for i in range(10)]
     out_dir = '/home/yunbo/workspace/test'
 
-    nb_epochs = 1 #20
-    nb_epoch_cycles = 5#len(instances_train)//batch_sample
+    nb_epochs = 20 #20
+    nb_epoch_cycles = 10#len(instances_train)//batch_sample
     
     
-    nb_rollout_steps = 8 #30
+    nb_rollout_steps = 16 #30
 
     # print("{} train instances for {} samples".format(len(instances_train),nb_epoch_cycles*nb_epochs*batch_sample))
 
@@ -566,7 +520,7 @@ def learn(args,network='gnn',
 
     actor_critic = GNNActorCritic
 
-    agent = DDPG(actor_critic=actor_critic,batch_size=batch_size,critic_l2_reg=critic_l2_reg,pi_lr=actor_lr,q_lr=critic_lr,tau=tau,gamma=gamma)
+    agent = DDPG(actor_critic=actor_critic,batch_size=batch_size,critic_l2_reg=critic_l2_reg,pi_lr=actor_lr,q_lr=critic_lr,tau=tau,gamma=gamma,replay_size=1000)
     if load_path is not None:
         agent.load_pytorch_policy(load_path)
 
@@ -578,7 +532,7 @@ def learn(args,network='gnn',
 
     min_obj = 10000
 
-    for epoch in range(nb_epochs):
+    for epoch in range(1):
         random.shuffle(instances_train)
 
         fieldnames = [
@@ -588,183 +542,101 @@ def learn(args,network='gnn',
             'bestroot',
             'imp',
             'mean',
+            'time',
+            'seed',
+            'size',
         ]
         print('epoch loop')
-        # result = "test_{}.csv".format(time.strftime('%Y%m%d-%H%M%S'))
-        # os.makedirs('results', exist_ok=True)
-        # with open("results/{}".format(result),'w', newline='') as csvfile:
-        #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        #     writer.writeheader()
-        #     print('with open')
-        for cycle in range(nb_epoch_cycles):
-            print('epoch',epoch,'cycle',cycle)
-            formu_feat, epi, ori_objs, best_root, instances, ini_sol, IM=collect_samples0(instances_train, out_dir + '/train', rng, batch_sample,
-                            args.njobs, exploration_policy=exploration_strategy,
-                            batch_id=cycle,
-                            eval_flag=eval_val,
-                            time_limit=None)
-            
-            nor_rd = formu_feat[:,:,0]
-            
-            init_sols = ini_sol
+        result = "test_{}.csv".format(time.strftime('%Y%m%d-%H%M%S'))
+        os.makedirs('test_results', exist_ok=True)
+        with open("test_results/{}".format(result),'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for cycle in range(1):
+                print('epoch',epoch,'cycle',cycle)
+                # evalue
+                if cycle%1==0:
+                    episodes = 0
+                    t = 0
+                    
 
-            ori_objs=np.copy(best_root) 
-            ori_objs=np.multiply(nor_rd, init_sols).sum(1)
-            best_root=ori_objs.copy()
-            current_sols = init_sols
-            if nenvs > 1:
-                agent.reset()
+                    for cyc in range(len(instances_valid)//batch_sample_eval):
+                        a_1 = time.time()
+                        obj_list = []
+                        formu_feat, epi, ori_objs, best_root, instances, ini_sol, IM=collect_samples0(instances_valid, out_dir + '/train', rng, batch_sample_eval,
+                                        args.njobs, exploration_policy=exploration_strategy,
+                                        batch_id=cyc,
+                                        eval_flag=1,
+                                        time_limit=None)
+                        print('epoch',epoch,'cycle',cycle,'cyc',cyc)
 
-            pre_sols = np.zeros([2,batch_sample,1000])
-            rec_inc = [[] for r in range(batch_sample)]
-            [rec_inc[r].append(init_sols[r]) for r in range(batch_sample)]
-            rec_best = np.copy(best_root)
-            inc_val = np.stack([rec_inc[r][-1] for r in range(batch_sample)])
-            avg_inc_val = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample)])
-            current_obs = np.concatenate((formu_feat, inc_val[:,:,np.newaxis], avg_inc_val[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
-        
-            
-            for t_rollout in range(nb_rollout_steps):
-                print('epoch',epoch,'cycle',cycle,'t_rollout',t_rollout)
-                action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
-                pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
+                        init_sols = ini_sol
 
-                action_n = np.copy(action)
-                action_n = np.where(action_n > 0.5, action_n, 0.)
-                action_n = np.where(action_n == 0., action_n, 1.)
+                        ori_objs = np.copy(best_root)
+                        current_sols = init_sols
+                        record_ini = np.copy(ori_objs)
 
-                action = np.random.binomial(1,action)
-                action = np.where(action > 0.5, action, 0.)
-                action = np.where(action == 0., action, 1.)
+                        pre_sols = np.zeros([2, batch_sample_eval, 1000])
+                        rec_inc = [[] for r in range(batch_sample_eval)]
+                        [rec_inc[r].append(init_sols[r]) for r in range(batch_sample_eval)]
+                        rec_best = np.copy(best_root)
+                        incu_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
+                        incu_val_avg = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])
+                        current_obs = np.concatenate((formu_feat, incu_val[:,:,np.newaxis], incu_val_avg[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
 
-                a = time.time()
+                        for t_rollout in range(nb_eval_steps):
+                            action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
 
-                next_sols, epi, current_objs, instances, mask = collect_samples(instances, epi, current_sols, action, out_dir + '/train', rng, batch_sample,
-                                args.njobs, exploration_policy=exploration_strategy,
-                                eval_flag=eval_val,
-                                time_limit=time_limit) 
-                current_sols = next_sols.copy()
-                # print('epoch',epoch)
-                current_objs = np.multiply(nor_rd, next_sols).sum(1)
+                            pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
 
-                if t_rollout > 0:
-                    agent.store_trans(current_obs_s, action_s, r_s, next_obs_s, action, epi)
-                r = ori_objs - current_objs
 
-                inc_ind = np.where(current_objs < rec_best)[0]
-                [rec_inc[r].append(current_sols[r]) for r in inc_ind]
-                rec_best[inc_ind] = current_objs[inc_ind]
+                            action = np.random.binomial(1,action)
+                            action = np.where(action > 0.5, action, 0.)
+                            action = np.where(action == 0., action, 1.)
 
-                t += 1
 
-                incu_val = np.stack([rec_inc[r][-1] for r in range(batch_sample)])
-                incu_val_avg = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample)])
-                next_obs = np.concatenate((formu_feat, incu_val[:,:,np.newaxis], incu_val_avg[:,:,np.newaxis], pre_sols[-2:].transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
-                current_obs_s = current_obs.copy()
-                action_s = action.copy()
-                r_s = r
-                next_obs_s = next_obs.copy()
-
-                current_obs = next_obs
-                ori_objs = current_objs
-
-            epoch_ac_loss = []
-            epoch_cr_loss = []
-            epoch_adaptive_distance = []
-            for t_train in range(nb_train_steps):
-                print('train',t_train)
-                cr_l, ac_l = agent.train(IM)
-                epoch_ac_loss.append(ac_l)
-                epoch_cr_loss.append(cr_l)
-                # agent.update()
-
-            # evalue
-            if cycle%1==0:
-                episodes = 0
-                t = 0
-                obj_list = []
-
-                for cyc in range(len(instances_valid)//batch_sample_eval):
-                    a_1 = time.time()
-
-                    formu_feat, epi, ori_objs, best_root, instances, ini_sol, IM=collect_samples0(instances_valid, out_dir + '/train', rng, batch_sample_eval,
+                            current_sols, epi, current_objs, instances, mask = collect_samples(instances, epi, current_sols, action, out_dir + '/train', rng, batch_sample_eval,
                                     args.njobs, exploration_policy=exploration_strategy,
-                                    batch_id=cyc,
                                     eval_flag=1,
-                                    time_limit=None)
-                    print('epoch',epoch,'cycle',cycle,'cyc',cyc)
+                                    time_limit=time_limit) 
+                            # print('epoch',epoch,'cycle',cycle,'eve_t_roll',t_rollout)
+                            inc_ind = np.where(current_objs < rec_best)[0]
+                            [rec_inc[r].append(current_sols[r]) for r in inc_ind]
+                            rec_best[inc_ind] = current_objs[inc_ind]
+                            re = ori_objs - current_objs
 
-                    init_sols = ini_sol
+                            t += 1
 
-                    ori_objs = np.copy(best_root)
-                    current_sols = init_sols
-                    record_ini = np.copy(ori_objs)
+                            inc_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
+                            avg_inc_val = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])         
+        
+                            next_obs = np.concatenate((formu_feat, inc_val[:,:,np.newaxis], avg_inc_val[:,:,np.newaxis], pre_sols[-2:].transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
 
-                    pre_sols = np.zeros([2, batch_sample_eval, 1000])
-                    rec_inc = [[] for r in range(batch_sample_eval)]
-                    [rec_inc[r].append(init_sols[r]) for r in range(batch_sample_eval)]
-                    rec_best = np.copy(best_root)
-                    incu_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
-                    incu_val_avg = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])
-                    # print('formu_feat,',formu_feat.shape)
-                    # print('incu_val,',incu_val.shape)
-                    current_obs = np.concatenate((formu_feat, incu_val[:,:,np.newaxis], incu_val_avg[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
+                            current_obs = next_obs
+                            ori_objs = current_objs
+                            obj_list.append(current_objs)
+                            if time.time()-a_1 > 2000.0:
+                                print('break')
+                                break
 
-                    for t_rollout in range(nb_eval_steps):
-                        action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
+                        # print(time.time()-a_1)
+                        ti = time.time()-a_1
+                        miniu = np.stack(obj_list).min(axis=0)  
+                        ave = np.mean(miniu)
+                        for j in range(batch_sample_eval):                 
+                            writer.writerow({
+                                'instance': instances[j],
+                                'obj':miniu[j],
+                                'initial':record_ini[j],
+                                'bestroot':best_root[j],
+                                'imp':best_root[j]-miniu[j],
+                                'mean':ave,
+                                'time':ti,
+                                'seed':args.seed,
+                                'size':1000
+                            })
+                            csvfile.flush()
 
-                        pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
-
-                        action_n = np.copy(action)
-                        action_n = np.where(action_n > 0.5, action_n, 0.)
-                        action_n = np.where(action_n == 0., action_n, 1.)
-
-                        action = np.random.binomial(1,action)
-                        action = np.where(action > 0.5, action, 0.)
-                        action = np.where(action == 0., action, 1.)
-
-
-                        current_sols, epi, current_objs, instances, mask = collect_samples(instances, epi, current_sols, action, out_dir + '/train', rng, batch_sample_eval,
-                                args.njobs, exploration_policy=exploration_strategy,
-                                eval_flag=1,
-                                time_limit=time_limit) 
-                        print('epoch',epoch,'cycle',cycle,'eve_t_roll',t_rollout)
-                        inc_ind = np.where(current_objs < rec_best)[0]
-                        [rec_inc[r].append(current_sols[r]) for r in inc_ind]
-                        rec_best[inc_ind] = current_objs[inc_ind]
-                        re = ori_objs - current_objs
-
-                        t += 1
-
-                        inc_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
-                        avg_inc_val = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])         
-    
-                        next_obs = np.concatenate((formu_feat, inc_val[:,:,np.newaxis], avg_inc_val[:,:,np.newaxis], pre_sols[-2:].transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
-
-                        current_obs = next_obs
-                        ori_objs = current_objs
-                        obj_list.append(current_objs)
-
-                    print(time.time()-a_1)
-                    miniu = np.stack(obj_list).min(axis=0)  
-                    ave = np.mean(miniu)
-                        # for j in range(batch_sample_eval):                 
-                        #     writer.writerow({
-                        #         'instance': instances[j],
-                        #         'obj':miniu[j],
-                        #         'initial':record_ini[j],
-                        #         'bestroot':best_root[j],
-                        #         'imp':best_root[j]-miniu[j],
-                        #         'mean':ave,
-                        #     })
-                        #     csvfile.flush()
-
-                        
-                if save_path is not None and ave<min_obj:
-                    print('if save_path')
-                    s_path = os.path.expanduser(save_path)
-                    agent.save(s_path)
-                    min_obj = ave
                             
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

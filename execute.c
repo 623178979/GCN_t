@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+// #include <numpy/arrayobject.h>
 #include "scip/scip.h"
 #include "scip/scipdefplugins.h"
 #include "scip/type_result.h"
@@ -95,41 +97,84 @@ SCIP_RESULT executeBranchRule(PyObject *capsule, const char* name, SCIP_Bool all
     }
     return 0;
 }
-// int executeBranchRule(PyObject *capsule, const char* name, SCIP_Bool allowaddcons){
-//     return 7;
-// }
 
-// SCIP_BRANCHRULE* executeBranchRule(SCIP* scip, const char* name){
-//     SCIP_BRANCHRULE* branchrule;
-//     // SCIP_RESULT result;
-//     // SCIP_RETCODE retcode;
+// PyObject* getState(PyObject *capsule, PyObject *prev_state) {
+//     // PyObject *prev_state = NULL;
+//     // PyObject *prev_state;
+//     SCIP *scip;  // Assuming you have a way to retrieve this, perhaps stored in self
+//     PyObject *update;
 
-//     branchrule = SCIPfindBranchrule(scip, name);
-//     // if (branchrule == NULL) {
-//     //     printf("Error, branching rule not found!\n");
-//     //     return SCIP_DIDNOTFIND;
-//     // } else {
-//     //     SCIP_CALL( branchrule -> branchexeclp(scip, branchrule, allowaddcons, result) );
-//     //     return result;
+//     // if (!PyArg_ParseTuple(args, "|O", &prev_state)) {
+//     //     return NULL; // Error if argument parsing fails
 //     // }
-//     return branchrule;
+
+//     // Assuming self is a custom type that includes SCIP*
+//     scip = (SCIP*) PyCapsule_GetPointer(capsule, "scip");
+//     if (prev_state != NULL){
+//         update = prev_state;
+//     }
+//     // update = (prev_state != NULL);
+
+//     // Get SCIP columns and number of columns
+//     SCIP_COL** cols = SCIPgetLPCols(scip);
+//     int ncols = SCIPgetNLPCols(scip);
+
+//     // Array declarations
+//     npy_intp col_dims[1] = {ncols};
+//     PyObject *col_types = NULL;
+//     PyObject *col_coefs = NULL;
+
+//     // Initialize NumPy array API
+//     import_array();
+
+//     if (!update) {
+//         col_types = PyArray_SimpleNew(1, col_dims, NPY_INT32);
+//         col_coefs = PyArray_SimpleNew(1, col_dims, NPY_FLOAT32);
+//         // Continue for other arrays...
+//     } else {
+//         // Extract arrays from prev_state if updating
+//         col_types = PyDict_GetItemString(prev_state, "col_types");
+//         col_coefs = PyDict_GetItemString(prev_state, "col_coefs");
+//         // Increase ref counts as needed or ensure borrowed references are handled correctly
+//         Py_XINCREF(col_types);
+//         Py_XINCREF(col_coefs);
+//         // Continue for other arrays...
+//     }
+
+//     // Example SCIP loop to populate data
+//     for (int i = 0; i < ncols; i++) {
+//         int col_type = SCIPvarGetType(SCIPcolGetVar(cols[i]));
+//         double col_coef = SCIPcolGetObj(cols[i]);
+
+//         if (!update) {
+//             ((int *)PyArray_DATA((PyArrayObject *)col_types))[i] = col_type;
+//             ((float *)PyArray_DATA((PyArrayObject *)col_coefs))[i] = col_coef;
+//         }
+//     }
+
+//     // Create a Python dict to return
+//     PyObject *result = PyDict_New();
+//     PyDict_SetItemString(result, "col_types", col_types);
+//     PyDict_SetItemString(result, "col_coefs", col_coefs);
+
+//     // Clean up: DECREF new objects created
+//     Py_XDECREF(col_types);
+//     Py_XDECREF(col_coefs);
+
+//     return result;
 // }
-// int main() {
-//     SCIP* scip = NULL;
-//     const char* branchrule_name = "relpscost";
-//     SCIP_Bool allowaddcons = TRUE;
-//     SCIP_RESULT result;
 
-//     /* Call the function */
-//     result = executeBranchRule(scip, branchrule_name, allowaddcons);
-//     printf("Branch rule execution result: %d\n", result);
 
-//     /* Free SCIP resources, assuming SCIP was initialized in executeBranchRule */
-//     SCIP_CALL( SCIPfree(&scip) );
-
-//     return 0;
+// int rowTest(PyObject *capsule){
+//     if(!Py_IsInitialized()){
+//         Py_Initialize();
+//     }
+//     SCIP* scip;
+//     // import_array();
+//     scip = (SCIP*) PyCapsule_GetPointer(capsule, "scip");
+//     int ncols = SCIPgetNLPCols(scip);
+//     // SCIP_COL** cols = SCIPgetLPCols(scip);
+//     int nrows = SCIPgetNLPRows(scip);
+//     return nrows;
 // }
-// SCIP_BRANCHRULE* main(){
 
-//     // return 0;
-// }

@@ -2,12 +2,12 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.optim import Adam
-#import gym
+# import gym
 import time
 import ddpg.core as core
 from ddpg.utils.logx import EpochLogger
 import ddpg.util as U
-
+import os.path as osp
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer:
@@ -68,7 +68,7 @@ def get_target_updates(vars, target_vars, tau):
 
 class DDPG(object):
     def __init__(self, actor_critic=core.GNNActorCritic, critic = core.GNNQFunction, seed=0, 
-            steps_per_epoch=4000, replay_size=int(250), gamma=0.99, tau=0.001, 
+            steps_per_epoch=4000, replay_size=int(750), gamma=0.99, tau=0.001, 
             polyak=0.995, pi_lr=1e-5, q_lr=1e-5, normalize_observations=True, batch_size=100,
             start_steps=10000, update_after=1000, update_every=50, act_noise=0.1,
             num_test_episodes=10, max_ep_len=1000, logger_kwargs=dict(), epochs=100,
@@ -158,8 +158,8 @@ class DDPG(object):
 
         """
 
-        # self.logger = EpochLogger(**logger_kwargs)
-        # self.logger.save_config(locals())
+        self.logger = EpochLogger(**logger_kwargs)
+        self.logger.save_config(locals())
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -213,11 +213,11 @@ class DDPG(object):
         #return norm
         self.ret_rms = None
         # Set up optimizers for policy and q-function
-        self.pi_optimizer = Adam(self.actor.pi.parameters(), lr=pi_lr)
-        self.q_optimizer = Adam(self.critic.q.parameters(), lr=q_lr, weight_decay=self.critic_l2_reg)
+        self.pi_optimizer = Adam(self.actor.pi.parameters(), lr=self.pi_lr)
+        self.q_optimizer = Adam(self.critic.q.parameters(), lr=self.q_lr, weight_decay=self.critic_l2_reg)
 
         # Set up model saving
-        # self.logger.setup_pytorch_saver(self.actor)
+        self.logger.setup_pytorch_saver(self.actor)
 
         # Prepare for interaction with environment
         self.total_steps = self.steps_per_epoch * self.epochs
@@ -479,8 +479,16 @@ class DDPG(object):
         #         self.logger.log_tabular('LossQ', average_only=True)
         #         self.logger.log_tabular('Time', time.time()-self.start_time)
         #         self.logger.dump_tabular()
-    # def save(self, save_path):
-    #     self.logger.save_state({'setcover':0},None)
+    def save(self, save_path):
+        self.logger.output_dir = save_path
+        self.logger.save_state({'setcover':0},None)
+    def load_pytorch_policy(self, fpath, deterministic=False):
+        """ Load a pytorch policy saved with Spinning Up Logger."""
+        
+        fname = osp.join(fpath, 'pyt_save', 'model'+'.pt')
+        print('\n\nLoading from %s.\n\n'%fname)
+
+        self.actor = torch.load(fname)
 
 # if __name__ == '__main__':
 #     import argparse
