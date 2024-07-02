@@ -1355,6 +1355,10 @@ cdef extern from "scip/scip.h":
 
     # other
     void SCIPstatReset(SCIP_STAT* stat, SCIP_SET* set, SCIP_PROB* transprob, SCIP_PROB* origprob)
+    
+    #LP methods
+    SCIP_Bool SCIPisLPConstructed(SCIP* scip)	
+
 
 cdef extern from "scip/tree.h":
     int SCIPnodeGetNAddedConss(SCIP_NODE* node)
@@ -1707,6 +1711,8 @@ cdef extern from "scip/pub_lp.h":
     SCIP_ROW** SCIPcolGetRows(SCIP_COL* col)
     SCIP_Real* SCIPcolGetVals(SCIP_COL* col)
     int SCIPcolGetIndex(SCIP_COL* col)
+    SCIP_CONS* SCIProwGetOriginCons (SCIP_ROW* row)
+    int SCIPcolGetVarProbindex (SCIP_COL* col)
 
 cdef extern from "scip/lp.h":
     SCIP_Real SCIPlpGetObjNorm(SCIP_LP* lp)
@@ -2007,3 +2013,45 @@ cdef extern from "scip/branch_vanillafullstrong.h":
 
 cdef extern from "scip/set.h":
     SCIP_BRANCHRULE* SCIPsetFindBranchrule(SCIP_SET *set, const char *name)
+
+cdef extern from 'scip_var.h':
+    SCIP_RETCODE 	SCIPgetTransformedVar(SCIP* scip, SCIP_VAR* var, SCIP_VAR** transvar)
+
+cdef extern from 'pub_misc_linear.h':
+    SCIP_ROW* SCIPconsGetRow(SCIP* scip,SCIP_CONS* cons)	
+    SCIP_RETCODE SCIPgetConsVals(
+    SCIP*                 scip,               
+    SCIP_CONS*            cons,               
+    SCIP_Real*            vals,               
+    int                   varssize,           
+    SCIP_Bool*            success             
+    )
+
+cdef extern from 'scip_cons.h':
+    SCIP_RETCODE SCIPgetTransformedCons(SCIP* scip, SCIP_CONS* cons, SCIP_CONS** transcons)
+    SCIP_CONSHDLR* SCIPfindConshdlr(SCIP* scip, const char* name)
+    SCIP_CONSHDLR** SCIPgetConshdlrs(SCIP* scip)
+cdef extern from 'scip_prob.h':
+    int SCIPgetNOrigConss(SCIP* scip)
+    SCIP_CONS** SCIPgetOrigConss(SCIP* scip)
+
+cdef extern from 'scip_solve.h':
+    SCIP_RETCODE 	SCIPtransformProb (SCIP *scip)
+
+cdef extern from 'cons.h':
+    SCIP_CONS* SCIPconsGetTransformed(SCIP_CONS* cons)
+
+    SCIP_RETCODE SCIPconsGetNVars	(	SCIP_CONS * 	cons,
+    SCIP_SET * 	set,
+    int * 	nvars,
+    SCIP_Bool * 	success 
+    )	
+
+    SCIP_RETCODE SCIPconsGetVars	(	SCIP_CONS * 	cons,
+    SCIP_SET * 	set,
+    SCIP_VAR ** 	vars,
+    int 	varssize,
+    SCIP_Bool * 	success 
+    )
+
+    int 	SCIPgetNConshdlrs (SCIP *scip)
