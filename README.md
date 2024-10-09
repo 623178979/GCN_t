@@ -7,13 +7,9 @@
 
 `conda create -n name python=3.8 pytorch scip=8.0.1 pyscipopt numpy`
 
-`conda install cython`
+`conda install cython scipy joblib mpi4py`
 
-`conda install scipy`
-
-`conda install joblib`
-
-`conda install mpi4py`
+`conda install -c gurobi gurobi`
 
 To specify the where to find SCIP and install
 
