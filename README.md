@@ -14,7 +14,9 @@ If you want to generate new instances, please install gurobi:
 `conda install -c gurobi gurobi`
 
 ## Run
-To specify the where to find SCIP and install
+Before run the code, compile the cython function: modify the path of include_dirs and library_dirs in setup.py to your own environment. Then, run the command
+
+`python setup.py build_ext --inplace`
 
 `CMAKE_ARGS="-DSCIP_DIR=path/to/lib/cmake/scip -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON" python -m pip install .`
 
