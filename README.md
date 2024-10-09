@@ -9,8 +9,11 @@
 
 `conda install cython scipy joblib mpi4py`
 
+If you want to generate new instances, please install gurobi:
+
 `conda install -c gurobi gurobi`
 
+## Run
 To specify the where to find SCIP and install
 
 `CMAKE_ARGS="-DSCIP_DIR=path/to/lib/cmake/scip -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON" python -m pip install .`
