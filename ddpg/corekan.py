@@ -3,7 +3,7 @@ import scipy.signal
 
 import torch
 # from GCN_t.ddpg.model import GNNPolicy
-from ddpg.model import GNNPolicy,GNNCriticmean
+from ddpg.modelkan import GNNPolicy,GNNCriticmean
 
 # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEVICE = torch.device("cpu")

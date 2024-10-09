@@ -1,5 +1,5 @@
 import numpy as np
-from background import generate_bg, plot_bg
+from backgroundfixed import generate_bg, plot_bg
 from linear import LinearSystem
 import stlpy.benchmarks.common as sbc
 import stlpy.STL.predicate as ssp
@@ -108,7 +108,7 @@ def generate_atc(file_name):
 for i in range(10):
     file_names = []
     for j in range(10):
-        file_names.append('./atcdata/train/instances{}.mps'.format(10*i+j+1))
+        file_names.append('./fixedatc/train/instances{}.mps'.format(10*i+j+1))
     print(file_names)
     with ProcessPoolExecutor() as executor:
         executor.map(generate_atc,file_names)
@@ -116,7 +116,7 @@ for i in range(10):
 for i in range(10):
     file_names = []
     for j in range(10):
-        file_names.append('./atcdata/test/instances{}.mps'.format(10*i+j+1))
+        file_names.append('./fixedatc/test/instances{}.mps'.format(10*i+j+1))
     print(file_names)
     with ProcessPoolExecutor() as executor:
         executor.map(generate_atc,file_names)
@@ -125,7 +125,7 @@ for i in range(10):
 #     generate_atc(file_name=file_name)
 file_names = []
 for i in range(10):
-    file_names.append('./atcdata/validation/instances{}.mps'.format(i+1))
+    file_names.append('./fixedatc/validation/instances{}.mps'.format(i+1))
 
 with ProcessPoolExecutor() as executor:
     executor.map(generate_atc,file_names)

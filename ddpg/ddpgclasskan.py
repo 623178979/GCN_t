@@ -4,7 +4,7 @@ import torch
 from torch.optim import Adam
 # import gym
 import time
-import ddpg.core as core
+import ddpg.corekan as core
 from ddpg.utils.logx import EpochLogger
 import ddpg.util as U
 import os.path as osp
@@ -73,7 +73,7 @@ class DDPG(object):
             polyak=0.995, pi_lr=1e-5, q_lr=1e-5, normalize_observations=True, batch_size=100,
             start_steps=10000, update_after=1000, update_every=50, act_noise=0.1,
             num_test_episodes=10, max_ep_len=1000, logger_kwargs=dict(), epochs=100,
-            critic_l2_reg=0.
+            critic_l2_reg=0.,obs_dim = (11590, ),act_dim = (11590, ),feature_size=(14,)
         ):
         """
         Deep Deterministic Policy Gradient (DDPG)
@@ -169,9 +169,9 @@ class DDPG(object):
         # init env
         
         # self.obs_dim = self.env.observation_space.shape
-        self.obs_dim = (11590, )
+        self.obs_dim = obs_dim
         # self.act_dim = self.env.action_space.shape[0]
-        self.act_dim = (11590, )
+        self.act_dim = act_dim
 
         # Action limit for clamping: critically, assumes all dimensions share the same bound!
         # act_limit = self.env.action_space.high[0]
@@ -202,11 +202,12 @@ class DDPG(object):
         self.critic_l2_reg = critic_l2_reg
         
         
-
+        
+        buffer_size = self.obs_dim + feature_size
         #ob norm
         if self.normalize_observations:
             # self.obs_rms = U.RunningMeanStd(shape=self.obs_dim)
-            self.obs_rms = U.RunningMeanStd(shape=(11590,14))
+            self.obs_rms = U.RunningMeanStd(shape=buffer_size)
         else:
             self.obs_rms = None
         # normalized_obs0 = torch.clamp(U.normalize(self.obs0, self.obs_rms))
@@ -232,9 +233,10 @@ class DDPG(object):
             p.requires_grad = False
         for p in self.critic_targ.parameters():
             p.requires_grad = False
-
+        
+        act_size = self.act_dim + (1,)
         # Experience buffer
-        self.replay_buffer = ReplayBuffer(obs_dim=(11590,14,), act_dim=(11590,1), size=self.replay_size)
+        self.replay_buffer = ReplayBuffer(obs_dim=buffer_size, act_dim=act_size, size=self.replay_size)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         var_counts = tuple(core.count_vars(module) for module in [self.actor.pi, self.critic.q])
@@ -276,24 +278,16 @@ class DDPG(object):
         self.choice = torch.cat([1-self.actor.pi(obs), self.actor.pi(obs)],dim=2).to(DEVICE)
         self.choice_1 = torch.reshape(self.choice,(-1,2)).to(DEVICE)
         # self.indice = torch.cat([torch.arange(start=0,end=self.batch_size*11590).unsqueeze(-1).to(DEVICE),torch.reshape(act.type(torch.cuda.IntTensor),(-1,1))],-1).to(DEVICE)
-        self.indice = torch.cat([torch.arange(start=0,end=self.batch_size*11590).unsqueeze(-1).to(DEVICE),torch.reshape(act.type(torch.IntTensor),(-1,1))],-1).to(DEVICE)
+        self.indice = torch.cat([torch.arange(start=0,end=self.batch_size*self.obs_dim[0]).unsqueeze(-1).to(DEVICE),torch.reshape(act.type(torch.IntTensor),(-1,1))],-1).to(DEVICE)
         self.decision = U.gather_nd(self.choice_1,self.indice).to(DEVICE)
-        self.decision_1 = torch.reshape(self.decision,(-1,11590,1)).to(DEVICE)
+        self.decision_1 = torch.reshape(self.decision,(-1,self.obs_dim[0],1)).to(DEVICE)
         self.actor_loss = -(torch.sum(torch.log(self.decision_1),1)*Q0).mean()
         # Q0_re = Q0.reshape(-1,1)
 
         # self.q_pi = self.critic.q(self.o, self.actor.pi(self.o))
         return self.actor_loss
-        # return torch.mean(torch.matmul(torch.sum(torch.log(self.choice),1),Q0))
 
-    # def compute_pi(self, obs):
-    #     self.q_pi = self.
-    # # Set up optimizers for policy and q-function
-    # self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
-    # self.q_optimizer = Adam(self.ac.q.parameters(), lr=q_lr)
 
-    # # Set up model saving
-    # logger.setup_pytorch_saver(self.ac)
 
     def update(self, obs, act, target_Q, Q0):
         # torch.autograd.set_detect_anomaly(True)
@@ -341,9 +335,10 @@ class DDPG(object):
         a = self.actor.act(torch.as_tensor(o, dtype=torch.float32).to(DEVICE))
         # a += noise_scale * np.random.randn(self.act_dim)
         # return np.clip(a, -self.act_limit, self.act_limit)
-        a = a.detach().cpu().numpy()
-        # return np.clip(a, 0.2, 0.8)
-        return np.clip(a, 0.25, 0.75)
+        # a = a.detach().cpu().numpy()
+        a = a.numpy()
+        return np.clip(a, 0.2, 0.8)
+        # return np.clip(a, 0.3, 0.7)
 
     def test_agent(self):
         for j in range(self.num_test_episodes):
@@ -355,9 +350,6 @@ class DDPG(object):
                 ep_len += 1
             # self.logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
-    # def setup_popart(self):
-    #     new_var = self.ret_rms.var
-    #     new_mean = self.ret_rms.mean
 
     def step(self, obs, apply_noise=True, compute_Q=True):
         # param_noise = None
@@ -369,8 +361,8 @@ class DDPG(object):
         else:
             action = self.get_action(obs,0)
             q = None
-        # action = np.clip(action, 0.2, 0.8)
-        action = np.clip(action, 0.25, 0.75)
+        action = np.clip(action, 0.2, 0.8)
+        # action = np.clip(action, 0.3, 0.7)
         return action, q
     # # Prepare for interaction with environment
     # self.total_steps = self.steps_per_epoch * self.epochs
@@ -401,7 +393,8 @@ class DDPG(object):
         self.next_act = batch['next_actions'].numpy()
         norm_obs1 = U.normalize(self.obs1,self.obs_rms)
         Q_obs1 = self.critic_targ(torch.as_tensor(norm_obs1, dtype=torch.float32).to(DEVICE),torch.as_tensor(self.next_act, dtype=torch.float32).to(DEVICE))
-        Q_obs1 = Q_obs1.detach().cpu().numpy()
+        # Q_obs1 = Q_obs1.detach().cpu().numpy()
+        Q_obs1 = Q_obs1.numpy()
         target_Q = self.rewards + self.gamma * Q_obs1
         # self.obs0 = np.concatenate((batch['obs0'].numpy(), IM_batch), axis=-1)
         self.obs0 = batch['obs0'].numpy()
@@ -422,67 +415,7 @@ class DDPG(object):
         actor_loss, critic_loss = self.update(obs=norm_obs0,target_Q=target_Q,Q0=Q0,act=batch['act'].to(DEVICE))
         # del Q0
         return critic_loss, actor_loss
-        # for t in range(self.total_steps):
-            
-        #     # Until start_steps have elapsed, randomly sample actions
-        #     # from a uniform distribution for better exploration. Afterwards, 
-        #     # use the learned policy (with some noise, via act_noise). 
-        #     if t > self.start_steps:
-        #         a = self.get_action(self.o, self.act_noise)
-        #     else:
-        #         a = self.env.action_space.sample()
 
-        #     # Step the env
-        #     self.o2, self.r, self.d, _ = self.env.step(a)
-        #     self.ep_ret += self.r
-        #     self.ep_len += 1
-
-        #     # Ignore the "done" signal if it comes from hitting the time
-        #     # horizon (that is, when it's an artificial terminal signal
-        #     # that isn't based on the agent's state)
-        #     d = False if self.ep_len==self.max_ep_len else d
-
-        #     # Store experience to replay buffer
-        #     self.replay_buffer.store(self.o, self.a, self.r, self.o2, self.d)
-
-        #     # Super critical, easy to overlook step: make sure to update 
-        #     # most recent observation!
-        #     self.o = self.o2
-
-        #     # End of trajectory handling
-        #     if d or (self.ep_len == self.max_ep_len):
-        #         self.logger.store(EpRet=self.ep_ret, EpLen=self.ep_len)
-        #         self.o, self.ep_ret, self.ep_len = self.env.reset(self.instances), 0, 0
-
-        #     # Update handling
-        #     if t >= self.update_after and t % self.update_every == 0:
-        #         for _ in range(self.update_every):
-        #             self.batch = self.replay_buffer.sample_batch(self.batch_size)
-        #             self.update(data=self.batch)
-
-        #     # End of epoch handling
-        #     if (t+1) % self.steps_per_epoch == 0:
-        #         self.epoch = (t+1) // self.steps_per_epoch
-
-        #         # Save model
-                # if (self.epoch % self.save_freq == 0) or (self.epoch == self.epochs):
-        #             self.logger.save_state({'env': self.env}, None)
-
-        #         # Test the performance of the deterministic version of the agent.
-        #         self.test_agent()
-
-        #         # Log info about epoch
-        #         self.logger.log_tabular('Epoch', self.epoch)
-        #         self.logger.log_tabular('EpRet', with_min_and_max=True)
-        #         self.logger.log_tabular('TestEpRet', with_min_and_max=True)
-        #         self.logger.log_tabular('EpLen', average_only=True)
-        #         self.logger.log_tabular('TestEpLen', average_only=True)
-        #         self.logger.log_tabular('TotalEnvInteracts', t)
-        #         self.logger.log_tabular('QVals', with_min_and_max=True)
-        #         self.logger.log_tabular('LossPi', average_only=True)
-        #         self.logger.log_tabular('LossQ', average_only=True)
-        #         self.logger.log_tabular('Time', time.time()-self.start_time)
-        #         self.logger.dump_tabular()
     def save(self, save_path):
         self.logger.output_dir = save_path
         self.logger.save_state({'setcover':0},None)
@@ -494,23 +427,4 @@ class DDPG(object):
 
         self.actor = torch.load(fname)
 
-# if __name__ == '__main__':
-#     import argparse
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
-#     parser.add_argument('--hid', type=int, default=256)
-#     parser.add_argument('--l', type=int, default=2)
-#     parser.add_argument('--gamma', type=float, default=0.99)
-#     parser.add_argument('--seed', '-s', type=int, default=0)
-#     parser.add_argument('--epochs', type=int, default=50)
-#     parser.add_argument('--exp_name', type=str, default='ddpg')
-#     args = parser.parse_args()
 
-#     from GCN_t.ddpg.utils.run_utils import setup_logger_kwargs
-#     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
-
-#     a = DDPG(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
-#          ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), 
-#          gamma=args.gamma, seed=args.seed, epochs=args.epochs,
-#          logger_kwargs=logger_kwargs)
-#     a.train()
