@@ -5,7 +5,7 @@ import pyscipopt as scip
 import pickle
 import gzip
 
-from memory_profiler import profile
+# from memory_profiler import profile
 import gc
 import extract
 
