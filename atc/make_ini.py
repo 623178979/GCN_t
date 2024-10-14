@@ -6,7 +6,7 @@ def make_ini(instance):
     m.readProblem('{}'.format(instance))
     m.setParam('limits/solutions', 1)
     m.setIntParam('timing/clocktype', 2)
-    m.setRealParam('limits/time', 0.2) 
+    # m.setRealParam('limits/time', 0.2) 
     # m.setIntParam('presolving/maxrounds', 0)
     # m.setIntParam('propagating/maxrounds',0)
     # m.setIntParam('propagating/maxroundsroot',0)
@@ -19,7 +19,7 @@ def make_ini(instance):
     sols = m.getBestSol()
     m.writeSol(sols,filename=instance[:-4]+'.sol',write_zeros=True)
     return m.getStatus()
-instances_valid = glob.glob('./atcdata/train/*.mps')
+instances_valid = glob.glob('../atcdata/train/*.mps') + glob.glob('../atcdata/test/*.mps') + glob.glob('../atcdata/validation/*.mps') 
 status = []
 batch_size = 10
 a = len(instances_valid)//batch_size
