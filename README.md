@@ -14,9 +14,9 @@ If you want to generate new instances, please install gurobi:
 `conda install -c gurobi gurobi`
 
 ## Run
-Before run the code, please compile the cython function: modify the path of include_dirs and library_dirs in setup.py to your own environment. Then, run the command
+Before run the code, please compile the cython function: modify the path of `include_dirs` and `library_dirs` in `setup.py` to your own environment. Then, run the command
 
-`python setup.py build_ext --inplace`
+`python3 setup.py build_ext --inplace`
 
 ### Training
 
