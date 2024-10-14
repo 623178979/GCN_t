@@ -5,7 +5,7 @@
 
 `conda config --add channels pytorch`
 
-`conda create -n name python=3.8 pytorch scip=8.0.1 pyscipopt numpy`
+`conda create -n name python=3.8 pytorch scip=8.0.1 pyscipopt numpy treelib matplotlib`
 
 `conda install cython scipy joblib mpi4py`
 
@@ -25,4 +25,13 @@ Before run the code, please compile the cython function: modify the path of incl
 ### Testing
 
 `python3 -u kan_test.py`
+
+### New Instances
+To generate new instances, run `atc/datagenerateremove.py` (smaller size instances) or `atc/datageneratefixed.py` (larger size instances). In the report, we are using the smaller one (11590 variables*13000 constraints)
+
+`python -u datagenerateremove.py`
+
+Then, make the initial solution for new instances by using `atc/make_ini.py`
+
+`python -u make_ini.py`
 
