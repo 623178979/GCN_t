@@ -1,5 +1,9 @@
 # GCN_t
 ## Installation
+### Operating System
+
+Ubuntu 22.04
+
 ### Conda
 `conda config --add channels conda-forge`
 
