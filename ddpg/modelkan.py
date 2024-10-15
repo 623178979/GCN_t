@@ -38,9 +38,9 @@ class GNNPolicy(torch.nn.Module):
             torch.nn.Tanh(),
         )
 
-        self.kan_1 = KANLinear(emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=7,spline_order=3)
-        self.kan_2 = KANLinear(emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=7,spline_order=3)
-        self.kan_3 = KANLinear(emb_size,1,base_activation=torch.nn.Sigmoid,grid_size=7,spline_order=3)
+        self.kan_1 = KANLinear(emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=5,spline_order=3)
+        self.kan_2 = KANLinear(emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=5,spline_order=3)
+        self.kan_3 = KANLinear(emb_size,1,base_activation=torch.nn.Sigmoid,grid_size=5,spline_order=3)
 
     def forward(
         self, obs
@@ -108,9 +108,9 @@ class GNNCriticmean(torch.nn.Module):
         )
 
         self.final = torch.nn.Linear(emb_size,1)
-        self.kan_1 = KANLinear(2*emb_size,2*emb_size,base_activation=torch.nn.SiLU,grid_size=7,spline_order=3)
-        self.kan_2 = KANLinear(2*emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=7,spline_order=3)
-        self.kan_3 = KANLinear(emb_size,1,base_activation=torch.nn.Sigmoid,grid_size=7,spline_order=3)
+        self.kan_1 = KANLinear(2*emb_size,2*emb_size,base_activation=torch.nn.SiLU,grid_size=5,spline_order=3)
+        self.kan_2 = KANLinear(2*emb_size,emb_size,base_activation=torch.nn.SiLU,grid_size=5,spline_order=3)
+        self.kan_3 = KANLinear(emb_size,1,base_activation=torch.nn.Sigmoid,grid_size=5,spline_order=3)
 
     def forward(self, obs, action):
         # print('obs',obs.shape)

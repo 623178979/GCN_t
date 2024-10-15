@@ -55,10 +55,8 @@ def make_samples(in_queue,out_queue):
     m.setIntParam('display/verblevel', 0)
     m.readProblem('{}'.format(instance))
     utilities.init_scip_paramsR(m, seed=seed)
-    # m.setIntParam('timing/clocktype', 1)
     m.setIntParam('timing/clocktype', 2)
     m.setRealParam('limits/time', time_limit) 
-    # m.setIntParam('presolving/maxrounds', 0)
     m.setParam('parallel/maxnthreads', 64)
     m.setParam('parallel/minnthreads', 64)
     m.setIntParam('presolving/maxrounds', 0)
@@ -80,8 +78,6 @@ def make_samples(in_queue,out_queue):
         min_k = minimum_k
         print('len min_k',len(min_k[0]))
         for i in min_k[0]:
-            # if len(min_k) == 1:
-            #     print(varss[i])
             fixed_list.append(varss[i])
             a,b = m.fixVar(varss[i],obs[i])        
         if len(min_k[0]) ==1:
@@ -94,22 +90,13 @@ def make_samples(in_queue,out_queue):
         print('len min_k',len(min_k))
         
         for i in min_k:
-            # if len(min_k) == 1:
-            #     print(varss[i])
             fixed_list.append(varss[i])
             a,b = m.fixVar(varss[i],obs[i])  
         if len(min_k) ==1:
             print(fixed_list)
-    # if len(min_k[0])==1:
-    #     print(fixed_list)
-    m.optimize()
-    # print('m size',sys.getsizeof(m))
 
-    # if m.getStatus() != 'infeasible':
-    #     K = [m.getVal(x) for x in m.getVars()] 
-    # else: 
-    #     print('infeasible')
-    #     K = obs
+    m.optimize()
+
     print(m.getStatus())
 
 
@@ -125,16 +112,7 @@ def make_samples(in_queue,out_queue):
     # print(m.getStatus())
 
     m.freeProb()    
-    # m.freeTransform()
-    # out_queue = {
-    #     'type': 'solution',
-    #     'episode': episode,
-    #     'instance': instance,
-    #     'sol' : np.array(K),
-    #     'obj' : obj,
-    #     'seed': seed,
-    #     'mask': max_k,
-    # }            
+        
     temp = {}
     temp = {
         'type': 'solution',
@@ -217,33 +195,11 @@ def collect_samples(instances, epi, obs, actions, out_dir, rng, n_samples, n_job
         Maximum running time for an episode, in seconds.
     """
 
-    # start workers
-#     orders_queue = mp.Queue(maxsize=2*n_jobs)
-#     answers_queue = mp.SimpleQueue()
-#     workers = []
-    
-#     for i in range(n_jobs):
-#         abc=time.time()
-#         p = mp.Process(
-#                 target=make_samples,
-#                 args=(orders_queue, answers_queue),
-#                 daemon=True)
-#         workers.append(p)
-#         p.start()
-#         print(time.time()-abc) 
-
     tmp_samples_dir = '{}/tmp'.format(out_dir)
     os.makedirs(tmp_samples_dir, exist_ok=True)
     orders_queue = mp.Queue()
     answers_queue = mp.SimpleQueue()
-    # start dispatcher
-#     dispatcher = mp.Process(
-#             target=send_orders,
-#             args=(orders_queue, instances, epi, obs, actions, rng.randint(2**32), exploration_policy, query_expert_prob, time_limit, tmp_samples_dir),
-#             daemon=True)
-#     dispatcher.start()
 
-    # pars = send_orders(instances, epi, obs, actions, rng.randint(2**32), exploration_policy, eval_flag, time_limit, tmp_samples_dir) 
     so = mp.Process(
         target=send_orders,
         args=(orders_queue, instances, epi, obs, actions, rng.randint(2**32), exploration_policy, eval_flag, time_limit, tmp_samples_dir),
@@ -252,11 +208,8 @@ def collect_samples(instances, epi, obs, actions, out_dir, rng, n_samples, n_job
     so.start()
     pars = orders_queue.get()
     out_Q = []
-    # with ProcessPoolExecutor() as executor:
-    #     out_Q = list(executor.map(make_samples,pars))
+
     for n in range(n_samples):
-        # out_queue = make_samples(pars[n])
-        # out_Q.append(out_queue)    
         p = mp.Process(
             target=make_samples,
             args=(pars[n], answers_queue),
@@ -491,7 +444,7 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
     os.makedirs(tmp_samples_dir, exist_ok=True)
     orders_queue = mp.Queue()
     answers_queue = mp.SimpleQueue()
-    # pars = send_orders0(instances, n_samples, rng.randint(2**32), exploration_policy, batch_id, eval_flag, time_limit, tmp_samples_dir)  
+
     so0 = mp.Process(
             target=send_orders0,
             args=(orders_queue,instances, n_samples, rng.randint(2**32), exploration_policy, batch_id, eval_flag, time_limit, tmp_samples_dir),
@@ -499,8 +452,7 @@ def collect_samples0(instances, out_dir, rng, n_samples, n_jobs,
         )
     so0.start()
     pars = orders_queue.get()
-    # so0.join()
-    # print('ars',pars)
+
     out_Q = []
     for n in range(n_samples):
         p = mp.Process(
@@ -595,9 +547,7 @@ def learn(args,network='gnn',
     exploration_strategy = 'relpscost'
 
     instances_valid = []
-    # instances_train = glob.glob('/root/autodl-tmp/GCN_t/data/instances/setcover/transfer_5000r_1000c_0.05d/*.lp')
     instances_train = glob.glob('./smallatc/train/*.mps')
-    # instances_valid += ['/root/autodl-tmp/GCN_t/data/instances/setcover/validation5000/instance_{}.lp'.format(i+1) for i in range(10)]
     instances_valid += ['./smallatc/validation/instances{}.mps'.format(i+1) for i in range(10)]
     out_dir = './test'
 
@@ -651,12 +601,10 @@ def learn(args,network='gnn',
                                 eval_flag=eval_val,
                                 time_limit=None)
                 
-                # nor_rd = formu_feat[:,:,0]
-                # print(formu_feat.shape)
+
                 init_sols = ini_sol
     
                 ori_objs=np.copy(best_root) 
-                # ori_objs=np.multiply(nor_rd, init_sols).sum(1)
                 best_root=ori_objs.copy()
                 current_sols = init_sols
                 if nenvs > 1:
@@ -676,9 +624,6 @@ def learn(args,network='gnn',
                     action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
                     pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
     
-                    # action_n = np.copy(action)
-                    # action_n = np.where(action_n > 0.5, action_n, 0.)
-                    # action_n = np.where(action_n == 0., action_n, 1.)
                     action = np.nan_to_num(action,copy=False)
                     action = np.random.binomial(1,action)
                     action = np.where(action > 0.5, action, 0.)
@@ -691,8 +636,7 @@ def learn(args,network='gnn',
                                     eval_flag=eval_val,
                                     time_limit=time_limit) 
                     current_sols = next_sols.copy()
-                    # print('epoch',epoch)
-                    # current_objs = np.multiply(nor_rd, next_sols).sum(1)
+
     
                     if t_rollout > 0:
                         agent.store_trans(current_obs_s, action_s, r_s, next_obs_s, action, epi)
@@ -701,7 +645,6 @@ def learn(args,network='gnn',
     
                     inc_ind = np.where(current_objs < rec_best)[0]
                     [rec_inc[r].append(current_sols[r]) for r in inc_ind]
-                    # print('reward',r)
                     rec_best[inc_ind] = current_objs[inc_ind]
     
                     t += 1
@@ -726,7 +669,6 @@ def learn(args,network='gnn',
                     cr_l, ac_l = agent.train(IM)
                     epoch_ac_loss.append(ac_l)
                     epoch_cr_loss.append(cr_l)
-                    # agent.update()
     
                 # evalue
                 if cycle%1==0:
@@ -756,21 +698,13 @@ def learn(args,network='gnn',
                         rec_best = np.copy(best_root)
                         incu_val = np.stack([rec_inc[r][-1] for r in range(batch_sample_eval)])
                         incu_val_avg = np.stack([np.array(rec_inc[r]).mean(0) for r in range(batch_sample_eval)])
-                        # print('formu_feat,',formu_feat.shape)
-                        # print('incu_val,',incu_val.shape)
                         current_obs = np.concatenate((formu_feat, incu_val[:,:,np.newaxis], incu_val_avg[:,:,np.newaxis], pre_sols.transpose(1,2,0), current_sols[:,:,np.newaxis]), axis=-1)
                         mask = None
                         for t_rollout in range(nb_eval_steps):
                             print('epoch',epoch,'cycle',cycle,'eve_t_roll',t_rollout)
                             action, q = agent.step(np.concatenate((current_obs, IM), axis=-1))
-                            # print(action)
-                            # print(q)
                             pre_sols = np.concatenate((pre_sols,current_sols[np.newaxis,:,:]), axis=0)
     
-                            # action_n = np.copy(action)
-                            # action_n = np.where(action_n > 0.5, action_n, 0.)
-                            # action_n = np.where(action_n == 0., action_n, 1.)
-                            # print(action)
                             action = np.nan_to_num(action,copy=False)
                             action = np.random.binomial(1,action)
                             action = np.where(action > 0.5, action, 0.)

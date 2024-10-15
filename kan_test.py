@@ -77,8 +77,6 @@ def make_samples(in_queue,out_queue):
         min_k = minimum_k
         print('len min_k',len(min_k[0]))
         for i in min_k[0]:
-            # if len(min_k) == 1:
-            #     print(varss[i])
             fixed_list.append(varss[i])
             a,b = m.fixVar(varss[i],obs[i])        
         if len(min_k[0]) ==1:
